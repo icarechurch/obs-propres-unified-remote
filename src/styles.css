@@ -1,0 +1,413 @@
+@import "tailwindcss";
+
+/* ── Fonts ──────────────────────────────────────────────────────────────────── */
+:root {
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Colors */
+  --bg-base: #0a0a0b;
+  --bg-panel: #111114;
+  --bg-card: #18181c;
+  --bg-input: #1c1c21;
+  --border: #27272e;
+  --border-light: #32323c;
+  --text-primary: #f0f0f2;
+  --text-secondary: #9999aa;
+  --text-muted: #55555f;
+  --accent-obs: #38bdf8;   /* sky-400 */
+  --accent-pp: #a78bfa;    /* violet-400 */
+  --accent-red: #f87171;   /* red-400 */
+  --accent-amber: #fbbf24; /* amber-400 */
+  --accent-green: #4ade80; /* green-400 */
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Dashboard Layout ───────────────────────────────────────────────────────── */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg-base);
+  overflow: hidden;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  shrink: 0;
+  flex-shrink: 0;
+}
+
+.header-cross {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  opacity: 0.6;
+}
+
+.cross-v {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 100%;
+  background: var(--text-secondary);
+  border-radius: 1px;
+}
+
+.cross-h {
+  position: absolute;
+  top: 38%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--text-secondary);
+  border-radius: 1px;
+}
+
+.dashboard-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-subtitle {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin: 1px 0 0;
+  letter-spacing: 0.01em;
+}
+
+/* ── Panels ──────────────────────────────────────────────────────────────────── */
+.panels-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-wrapper {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-divider {
+  width: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Panel Base (shared by OBS and PP panels) ───────────────────────────────── */
+.obs-panel,
+.pp-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-panel);
+}
+
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* ── Status Card ──────────────────────────────────────────────────────────────── */
+.status-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* ── Control Buttons ─────────────────────────────────────────────────────────── */
+.control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  border: 1px solid transparent;
+  min-height: 38px;
+}
+
+.control-btn:active {
+  transform: scale(0.97);
+}
+
+.control-btn-primary {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--accent-obs);
+  border-color: rgba(56, 189, 248, 0.25);
+}
+.control-btn-primary:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.control-btn-violet {
+  background: rgba(167, 139, 250, 0.12);
+  color: var(--accent-pp);
+  border-color: rgba(167, 139, 250, 0.25);
+}
+.control-btn-violet:hover {
+  background: rgba(167, 139, 250, 0.2);
+  border-color: rgba(167, 139, 250, 0.4);
+}
+
+.control-btn-danger {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--accent-red);
+  border-color: rgba(248, 113, 113, 0.25);
+}
+.control-btn-danger:hover {
+  background: rgba(248, 113, 113, 0.2);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.control-btn-amber {
+  background: rgba(251, 191, 36, 0.1);
+  color: var(--accent-amber);
+  border-color: rgba(251, 191, 36, 0.2);
+}
+.control-btn-amber:hover {
+  background: rgba(251, 191, 36, 0.18);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.control-btn-ghost {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.control-btn-ghost:hover {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--border-light);
+}
+
+/* ── Scene / Source Rows ─────────────────────────────────────────────────────── */
+.scene-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.1s ease;
+  position: relative;
+}
+
+.scene-row:hover {
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+.scene-row:hover .icon-btn {
+  opacity: 1;
+}
+
+.scene-row .icon-btn {
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.scene-row-active {
+  border-color: rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.06);
+  color: var(--accent-obs);
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  transition: all 0.1s ease;
+}
+
+.source-row:hover {
+  border-color: var(--border-light);
+}
+
+/* ── Connect Form ─────────────────────────────────────────────────────────────── */
+.connect-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.connect-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.connect-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color 0.12s ease;
+  width: 100%;
+}
+
+.connect-input:focus {
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.connect-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Remove number input spinners */
+.connect-input[type='number']::-webkit-inner-spin-button,
+.connect-input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+.connect-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--accent-obs);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.connect-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.connect-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Icon Button ─────────────────────────────────────────────────────────────── */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: inherit;
+  line-height: 1;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 2px;
+}
+
+/* ── Mobile responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .panels-container {
+    flex-direction: column;
+  }
+
+  .panel-divider {
+    width: 100%;
+    height: 1px;
+  }
+
+  .panel-wrapper {
+    flex: none;
+    height: 50dvh;
+  }
+}
