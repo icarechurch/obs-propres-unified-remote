@@ -18,6 +18,15 @@ import {
   Monitor,
   Lock,
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 const LOCAL_STUDIO_MODE_STORAGE_KEY = 'obs.localStudioMode.enabled'
 
@@ -28,7 +37,8 @@ export function OBSPanel() {
   const [port, setPort] = useState(4455)
   const [password, setPassword] = useState('')
   const [connecting, setConnecting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [showConnectionErrorModal, setShowConnectionErrorModal] =
+    useState(false)
   const [localStudioMode, setLocalStudioMode] = useState(false)
   const [localStudioModeReady, setLocalStudioModeReady] = useState(false)
   const [localPreviewScene, setLocalPreviewScene] = useState<string | null>(
@@ -45,6 +55,12 @@ export function OBSPanel() {
     null,
   )
   const [transitioning, setTransitioning] = useState(false)
+
+  const normalizedHost = host
+    .trim()
+    .replace(/^\w+:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '')
 
   // Scene management
   const [selectedScene, setSelectedScene] = useState<string | null>(null)
@@ -267,10 +283,15 @@ export function OBSPanel() {
 
   const handleConnect = async () => {
     setConnecting(true)
-    setError(null)
+    setShowConnectionErrorModal(false)
     setStudioActionError(null)
-    const result = await obsService.connect(host, port, password, protocol)
-    if (!result.success) setError(result.error ?? 'Connection failed')
+    const result = await obsService.connect(
+      normalizedHost || host,
+      port,
+      password,
+      protocol,
+    )
+    if (!result.success) setShowConnectionErrorModal(true)
     setConnecting(false)
   }
 
@@ -415,37 +436,49 @@ export function OBSPanel() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 gap-4">
           <div className="w-full max-w-xs space-y-3">
-            {/* Protocol toggle */}
-            <div className="connect-form-group">
-              <label className="connect-label">Protocol</label>
-              <div className="flex rounded overflow-hidden border border-neutral-700">
-                <button
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors ${
-                    protocol === 'ws'
-                      ? 'bg-sky-500/20 text-sky-400'
-                      : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
-                  }`}
-                  onClick={() => setProtocol('ws')}
-                >
-                  ws://
-                </button>
-                <button
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors border-l border-neutral-700 ${
-                    protocol === 'wss'
-                      ? 'bg-sky-500/20 text-sky-400'
-                      : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
-                  }`}
-                  onClick={() => setProtocol('wss')}
-                >
-                  <Lock size={10} /> wss://
-                </button>
+            <div className="grid grid-cols-[2fr,1fr] gap-2">
+              <div className="connect-form-group">
+                <label className="connect-label">Conn Type</label>
+                <div className="flex rounded overflow-hidden border border-neutral-700">
+                  <button
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors ${
+                      protocol === 'ws'
+                        ? 'bg-sky-500/20 text-sky-400'
+                        : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
+                    }`}
+                    onClick={() => setProtocol('ws')}
+                  >
+                    ws://
+                  </button>
+                  <button
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors border-l border-neutral-700 ${
+                      protocol === 'wss'
+                        ? 'bg-sky-500/20 text-sky-400'
+                        : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
+                    }`}
+                    onClick={() => setProtocol('wss')}
+                  >
+                    <Lock size={10} /> wss://
+                  </button>
+                </div>
+              </div>
+
+              <div className="connect-form-group">
+                <label className="connect-label">Port</label>
+                <input
+                  className="connect-input"
+                  type="number"
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value))}
+                  placeholder="443"
+                />
               </div>
             </div>
 
             <div className="connect-form-group">
-              <label className="connect-label">Host</label>
+              <label className="connect-label">URL</label>
               <input
                 className="connect-input"
                 value={host}
@@ -453,16 +486,7 @@ export function OBSPanel() {
                 placeholder="localhost"
               />
             </div>
-            <div className="connect-form-group">
-              <label className="connect-label">Port</label>
-              <input
-                className="connect-input"
-                type="number"
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-                placeholder="4455"
-              />
-            </div>
+
             <div className="connect-form-group">
               <label className="connect-label">Password</label>
               <input
@@ -475,11 +499,8 @@ export function OBSPanel() {
             </div>
             {/* Preview URL */}
             <p className="text-xs text-neutral-600 font-mono text-center">
-              {protocol}://{host}:{port}
+              {protocol}://{normalizedHost || host}:{port}
             </p>
-            {error && (
-              <p className="text-xs text-red-400 text-center">{error}</p>
-            )}
             <button
               className="connect-btn w-full"
               onClick={handleConnect}
@@ -493,6 +514,23 @@ export function OBSPanel() {
               {connecting ? 'Connecting…' : 'Connect to OBS'}
             </button>
           </div>
+
+          <AlertDialog
+            open={showConnectionErrorModal}
+            onOpenChange={setShowConnectionErrorModal}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Connection error</AlertDialogTitle>
+                <AlertDialogDescription>
+                  An error occured
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogAction>OK</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     )

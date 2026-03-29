@@ -202,6 +202,69 @@ class OBSService {
     }
   }
 
+  private buildConnectionUrl(
+    hostInput: string,
+    portInput: number,
+    protocolInput: 'ws' | 'wss',
+  ): string {
+    let host = hostInput.trim()
+    if (!host) {
+      throw new Error('Host is required')
+    }
+
+    // Tolerate pasted tunnel URLs and accidental spaces from clipboard.
+    host = host.replace(/%20/gi, '').replace(/\s+/g, '')
+    host = host.replace(/^(https?|wss?)\/\//i, '$1://')
+
+    let protocol = protocolInput
+    let port = portInput
+    let hostname = host
+    const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(host)
+
+    if (hasScheme) {
+      const parsed = new URL(host)
+      const parsedProtocol = parsed.protocol.toLowerCase()
+
+      if (parsedProtocol === 'wss:' || parsedProtocol === 'https:') {
+        protocol = 'wss'
+      } else if (parsedProtocol === 'ws:' || parsedProtocol === 'http:') {
+        protocol = 'ws'
+      }
+
+      hostname = parsed.hostname
+      if (parsed.port) {
+        port = Number(parsed.port)
+      }
+    } else {
+      const hostPortMatch = host.match(/^([^/:]+):(\d+)$/)
+      if (hostPortMatch) {
+        hostname = hostPortMatch[1]
+        port = Number(hostPortMatch[2])
+      }
+    }
+
+    if (!hostname) {
+      throw new Error('Invalid host value')
+    }
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('Port must be between 1 and 65535')
+    }
+
+    const lowerHostname = hostname.toLowerCase()
+    if (
+      lowerHostname.endsWith('.trycloudflare.com') &&
+      protocol === 'wss' &&
+      port !== 443
+    ) {
+      throw new Error(
+        'Cloudflare tunnel domains only accept WSS on port 443. Use host only (no scheme) and set port to 443.',
+      )
+    }
+
+    return `${protocol}://${hostname}:${port}`
+  }
+
   async connect(
     host: string,
     port: number,
@@ -209,7 +272,7 @@ class OBSService {
     protocol: 'ws' | 'wss' = 'ws',
   ) {
     try {
-      const url = `${protocol}://${host}:${port}`
+      const url = this.buildConnectionUrl(host, port, protocol)
       await this.obs.connect(url, password || undefined)
       this._connected = true
 
@@ -242,13 +305,13 @@ class OBSService {
 
       this.notify()
       return { success: true }
-    } catch (err) {
+    } catch {
       this._connected = false
       this._studioModeEnabled = false
       this._currentPreviewScene = ''
       this._sceneScreenshotFallbackSource.clear()
       this.notify()
-      return { success: false, error: (err as Error).message }
+      return { success: false, error: 'An error occured' }
     }
   }
 

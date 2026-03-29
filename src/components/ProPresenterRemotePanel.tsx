@@ -47,6 +47,12 @@ export function ProPresenterRemotePanel() {
   const [connecting, setConnecting] = useState(false)
   const [connError, setConnError] = useState<string | null>(null)
 
+  const normalizedHost = host
+    .trim()
+    .replace(/^\w+:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '')
+
   const [activePres, setActivePres] = useState<ActivePres | null>(null)
   const [libraryPresentations, setLibraryPresentations] = useState<
     LibraryPresentation[]
@@ -175,7 +181,11 @@ export function ProPresenterRemotePanel() {
   const handleConnect = async () => {
     setConnecting(true)
     setConnError(null)
-    const result = await proPresenterService.connect(host, port, protocol)
+    const result = await proPresenterService.connect(
+      normalizedHost || host,
+      port,
+      protocol,
+    )
     if (!result.success)
       setConnError(
         'Could not reach ProPresenter. Check host/port and ensure the API is enabled.',
@@ -244,37 +254,49 @@ export function ProPresenterRemotePanel() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 gap-4">
           <div className="w-full max-w-xs space-y-3">
-            {/* Protocol toggle */}
-            <div className="connect-form-group">
-              <label className="connect-label">Protocol</label>
-              <div className="flex rounded overflow-hidden border border-neutral-700">
-                <button
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors ${
-                    protocol === 'http'
-                      ? 'bg-violet-500/20 text-violet-400'
-                      : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
-                  }`}
-                  onClick={() => setProtocol('http')}
-                >
-                  http://
-                </button>
-                <button
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors border-l border-neutral-700 ${
-                    protocol === 'https'
-                      ? 'bg-violet-500/20 text-violet-400'
-                      : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
-                  }`}
-                  onClick={() => setProtocol('https')}
-                >
-                  <Lock size={10} /> https://
-                </button>
+            <div className="grid grid-cols-[2fr,1fr] gap-2">
+              <div className="connect-form-group">
+                <label className="connect-label">Conn Type</label>
+                <div className="flex rounded overflow-hidden border border-neutral-700">
+                  <button
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors ${
+                      protocol === 'http'
+                        ? 'bg-violet-500/20 text-violet-400'
+                        : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
+                    }`}
+                    onClick={() => setProtocol('http')}
+                  >
+                    http://
+                  </button>
+                  <button
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors border-l border-neutral-700 ${
+                      protocol === 'https'
+                        ? 'bg-violet-500/20 text-violet-400'
+                        : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
+                    }`}
+                    onClick={() => setProtocol('https')}
+                  >
+                    <Lock size={10} /> https://
+                  </button>
+                </div>
+              </div>
+
+              <div className="connect-form-group">
+                <label className="connect-label">Port</label>
+                <input
+                  className="connect-input"
+                  type="number"
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value))}
+                  placeholder="443"
+                />
               </div>
             </div>
 
             <div className="connect-form-group">
-              <label className="connect-label">Host</label>
+              <label className="connect-label">URL</label>
               <input
                 className="connect-input"
                 value={host}
@@ -282,19 +304,9 @@ export function ProPresenterRemotePanel() {
                 placeholder="localhost"
               />
             </div>
-            <div className="connect-form-group">
-              <label className="connect-label">Port</label>
-              <input
-                className="connect-input"
-                type="number"
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-                placeholder="50001"
-              />
-            </div>
             {/* Preview URL */}
             <p className="text-xs text-neutral-600 font-mono text-center">
-              {protocol}://{host}:{port}
+              {protocol}://{normalizedHost || host}:{port}
             </p>
             {connError && (
               <p className="text-xs text-red-400 text-center">{connError}</p>
