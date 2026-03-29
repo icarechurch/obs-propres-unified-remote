@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { obsService, OBSScene, OBSSceneItem } from '@/services/obs.service'
 import {
   Wifi,
@@ -48,6 +48,10 @@ export function OBSPanel() {
   const [bsHeight, setBsHeight] = useState(1080)
   const [editingItem, setEditingItem] = useState<OBSSceneItem | null>(null)
   const [editBsUrl, setEditBsUrl] = useState('')
+  const [livePreview, setLivePreview] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const previewRequestRef = useRef(0)
 
   useEffect(() => {
     const unsub = obsService.subscribe(() =>
@@ -55,6 +59,62 @@ export function OBSPanel() {
     )
     return unsub
   }, [])
+
+  const refreshLivePreview = useCallback(
+    async (showLoading = false) => {
+      if (!status.connected || !status.currentScene) {
+        setLivePreview(null)
+        setPreviewError(null)
+        setPreviewLoading(false)
+        return
+      }
+
+      const requestId = ++previewRequestRef.current
+      if (showLoading) setPreviewLoading(true)
+
+      try {
+        const frame = await obsService.getProgramSceneScreenshot(960, 540, 70)
+        if (requestId !== previewRequestRef.current) return
+
+        if (frame) {
+          setLivePreview(frame)
+          setPreviewError(null)
+        } else {
+          setPreviewError('No frame available for the active scene.')
+        }
+      } catch (err) {
+        if (requestId !== previewRequestRef.current) return
+        setPreviewError(
+          (err as Error).message || 'Unable to load preview from OBS.',
+        )
+      } finally {
+        if (requestId === previewRequestRef.current) {
+          setPreviewLoading(false)
+        }
+      }
+    },
+    [status.connected, status.currentScene],
+  )
+
+  useEffect(() => {
+    if (!status.connected || !status.currentScene) {
+      previewRequestRef.current += 1
+      setLivePreview(null)
+      setPreviewError(null)
+      setPreviewLoading(false)
+      return
+    }
+
+    void refreshLivePreview(true)
+    const intervalId = window.setInterval(() => {
+      void refreshLivePreview()
+    }, 1500)
+
+    return () => {
+      previewRequestRef.current += 1
+      window.clearInterval(intervalId)
+    }
+  }, [status.connected, status.currentScene, refreshLivePreview])
 
   const handleConnect = async () => {
     setConnecting(true)
@@ -300,6 +360,42 @@ export function OBSPanel() {
             </p>
           </div>
 
+          {/* Live Camera Feed */}
+          <div className="status-card">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-neutral-500">Live Camera Feed</p>
+              <button
+                className="icon-btn text-neutral-500 hover:text-sky-400 disabled:opacity-40"
+                onClick={() => void refreshLivePreview(true)}
+                disabled={previewLoading}
+                title="Refresh preview"
+              >
+                <RefreshCw
+                  size={12}
+                  className={previewLoading ? 'animate-spin' : undefined}
+                />
+              </button>
+            </div>
+
+            <div className="relative w-full aspect-video overflow-hidden rounded-md border border-neutral-700 bg-neutral-900">
+              {livePreview ? (
+                <img
+                  src={livePreview}
+                  alt="Live camera feed"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs text-neutral-500">
+                  {previewLoading ? 'Loading preview…' : 'No preview yet'}
+                </div>
+              )}
+            </div>
+
+            {previewError && (
+              <p className="text-[11px] text-red-400 mt-2">{previewError}</p>
+            )}
+          </div>
+
           {/* Stream / Record Controls */}
           <div className="grid grid-cols-2 gap-3">
             <button
@@ -334,7 +430,7 @@ export function OBSPanel() {
               </p>
               <button
                 className="icon-btn text-neutral-500 hover:text-sky-400"
-                onClick={() => obsService.refreshScenes()}
+                onClick={() => void obsService.refreshScenes()}
               >
                 <RefreshCw size={12} />
               </button>
@@ -354,7 +450,7 @@ export function OBSPanel() {
                         onChange={(e) => setRenameValue(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter')
-                            handleRenameScene(scene.sceneName)
+                            void handleRenameScene(scene.sceneName)
                           if (e.key === 'Escape') setRenamingScene(null)
                         }}
                         autoFocus

@@ -245,6 +245,25 @@ class OBSService {
     })
   }
 
+  async getProgramSceneScreenshot(
+    width = 640,
+    height = 360,
+    quality = 70,
+  ): Promise<string | null> {
+    if (!this._connected || !this._currentScene) return null
+
+    const result = await this.obs.call('GetSourceScreenshot', {
+      sourceName: this._currentScene,
+      imageFormat: 'jpeg',
+      imageWidth: width,
+      imageHeight: height,
+      imageCompressionQuality: quality,
+    })
+
+    const imageData = (result as Record<string, unknown>).imageData
+    return typeof imageData === 'string' ? imageData : null
+  }
+
   async refreshScenes() {
     if (!this._connected) return
     const result = await this.obs.call('GetSceneList')
