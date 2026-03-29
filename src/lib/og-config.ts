@@ -27,7 +27,7 @@ export type OGMetaTags = {
 
 export const defaultCustomOGConfig: OGImageConfig = {
   isCustom: true,
-  title: 'Church Media Remote',
+  title: 'Media Team Combined Remote',
   description: 'Build something real',
   width: 1200,
   height: 630,

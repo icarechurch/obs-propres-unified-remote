@@ -12,7 +12,7 @@ export function Dashboard() {
             <div className="cross-h" />
           </div>
           <div>
-            <h1 className="dashboard-title">Church Media Remote</h1>
+            <h1 className="dashboard-title">Media Team Combined Remote</h1>
           </div>
         </div>
         <div className="text-xs text-neutral-600 font-mono hidden sm:block">
