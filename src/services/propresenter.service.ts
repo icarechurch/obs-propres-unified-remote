@@ -15,6 +15,16 @@ export interface ActivePresentation {
   id: { uuid: string; name: string; index: number }
   presentationCurrentSlide: number
   presentationSlideCount: number
+  slides: ActivePresentationSlide[]
+}
+
+export interface ActivePresentationSlide {
+  uuid: string
+  index: number
+  label: string
+  text: string
+  notes: string
+  groupName: string
 }
 
 interface RawPresentationID {
@@ -23,13 +33,28 @@ interface RawPresentationID {
   index?: number
 }
 
+interface RawPresentationSlide {
+  uuid?: string
+  id?: RawPresentationID
+  text?: string
+  notes?: string
+  label?: string
+  title?: string
+  display_name?: string
+  name?: string
+}
+
 interface RawPresentationGroup {
-  slides?: unknown[]
+  id?: RawPresentationID
+  name?: string
+  group_name?: string
+  slides?: RawPresentationSlide[]
 }
 
 interface RawPresentation {
   id?: RawPresentationID
   groups?: RawPresentationGroup[]
+  slides?: RawPresentationSlide[]
   current_location?: { index?: number }
   presentationCurrentSlide?: number
   presentation_current_slide?: number
@@ -221,6 +246,65 @@ class ProPresenterService {
     }
   }
 
+  private normalizeText(value: unknown): string {
+    if (typeof value !== 'string') return ''
+    return value.replace(/\s+/g, ' ').trim()
+  }
+
+  private parsePresentationSlides(
+    presentation: RawPresentation,
+  ): ActivePresentationSlide[] {
+    const slides: ActivePresentationSlide[] = []
+    let globalIndex = 0
+
+    const pushSlide = (slide: RawPresentationSlide, groupName: string) => {
+      const text = this.normalizeText(slide.text)
+      const explicitLabel = this.normalizeText(
+        slide.label ??
+          slide.title ??
+          slide.display_name ??
+          slide.name ??
+          slide.id?.name,
+      )
+
+      const fallbackFromText = text.slice(0, 80)
+      const label = explicitLabel || fallbackFromText || `Slide ${globalIndex + 1}`
+
+      slides.push({
+        uuid:
+          slide.id?.uuid ??
+          slide.uuid ??
+          `${presentation.id?.uuid ?? 'presentation'}-${globalIndex}`,
+        index: globalIndex,
+        label,
+        text,
+        notes: this.normalizeText(slide.notes),
+        groupName,
+      })
+
+      globalIndex += 1
+    }
+
+    if (Array.isArray(presentation.groups) && presentation.groups.length > 0) {
+      presentation.groups.forEach((group, groupIndex) => {
+        const groupName =
+          this.normalizeText(group.id?.name ?? group.name ?? group.group_name) ||
+          `Group ${groupIndex + 1}`
+
+        if (!Array.isArray(group.slides)) return
+        group.slides.forEach((slide) => pushSlide(slide, groupName))
+      })
+
+      return slides
+    }
+
+    if (Array.isArray(presentation.slides)) {
+      presentation.slides.forEach((slide) => pushSlide(slide, 'Slides'))
+    }
+
+    return slides
+  }
+
   // ── Status ──────────────────────────────────────────────────────────────────
   async getVersion() {
     return this.requestVersion()
@@ -252,6 +336,21 @@ class ProPresenterService {
       : null
   }
 
+  getPresentationThumbnailUrl(
+    presentationUUID: string,
+    slideIndex: number,
+    quality = 360,
+    thumbnailType: 'jpeg' | 'png' = 'jpeg',
+  ): string {
+    const params = new URLSearchParams()
+    params.set('quality', `${Math.max(64, Math.floor(quality))}`)
+    params.set('thumbnail_type', thumbnailType)
+
+    return `${this.baseUrl}/v1/presentation/${encodeURIComponent(
+      presentationUUID,
+    )}/thumbnail/${slideIndex}?${params.toString()}`
+  }
+
   // ── Presentation / Slides ────────────────────────────────────────────────────
   async getActivePresentation(): Promise<ActivePresentation | null> {
     const result = await this.request<RawActivePresentationResponse>(
@@ -261,6 +360,19 @@ class ProPresenterService {
 
     const presentation = result.presentation ?? result
     const id = presentation.id ?? {}
+    let slides = this.parsePresentationSlides(presentation)
+
+    // Some builds return a compact active payload. Hydrate slide text/details from
+    // the full presentation endpoint when active data does not include slide items.
+    if (slides.length === 0 && typeof id.uuid === 'string' && id.uuid.length > 0) {
+      const detailedPresentation = await this.request<RawPresentation>(
+        `/v1/presentation/${id.uuid}`,
+      )
+
+      if (detailedPresentation) {
+        slides = this.parsePresentationSlides(detailedPresentation)
+      }
+    }
 
     let currentSlide: number | null =
       presentation.presentationCurrentSlide ??
@@ -272,12 +384,7 @@ class ProPresenterService {
       currentSlide = await this.getPresentationSlideIndex()
     }
 
-    const groupSlideCount = Array.isArray(presentation.groups)
-      ? presentation.groups.reduce((count, group) => {
-          if (!Array.isArray(group?.slides)) return count
-          return count + group.slides.length
-        }, 0)
-      : 0
+    const groupSlideCount = slides.length
 
     const totalSlides =
       presentation.presentationSlideCount ??
@@ -298,6 +405,7 @@ class ProPresenterService {
         typeof totalSlides === 'number' && Number.isFinite(totalSlides)
           ? Math.max(totalSlides, 0)
           : 0,
+      slides,
     }
   }
 

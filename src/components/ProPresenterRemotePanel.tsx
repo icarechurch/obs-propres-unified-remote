@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   proPresenterService,
+  ActivePresentationSlide,
   Macro,
   PPTimer,
 } from '@/services/propresenter.service'
@@ -34,6 +35,7 @@ interface ActivePres {
   currentSlide: number
   totalSlides: number
   uuid: string
+  slides: ActivePresentationSlide[]
 }
 
 export function ProPresenterRemotePanel() {
@@ -53,6 +55,9 @@ export function ProPresenterRemotePanel() {
 
   const [jumpSlide, setJumpSlide] = useState('')
   const [loading, setLoading] = useState(false)
+  const [hiddenSlideThumbnails, setHiddenSlideThumbnails] = useState<
+    Record<string, true>
+  >({})
 
   useEffect(() => {
     const unsub = proPresenterService.subscribe(() =>
@@ -76,6 +81,7 @@ export function ProPresenterRemotePanel() {
           currentSlide: pres.presentationCurrentSlide ?? 0,
           totalSlides: pres.presentationSlideCount ?? 0,
           uuid: pres.id?.uuid ?? '',
+          slides: pres.slides ?? [],
         })
       } else {
         setActivePres(null)
@@ -95,6 +101,10 @@ export function ProPresenterRemotePanel() {
     }
   }, [status.connected, fetchStatus])
 
+  useEffect(() => {
+    setHiddenSlideThumbnails({})
+  }, [activePres?.uuid])
+
   const handleConnect = async () => {
     setConnecting(true)
     setConnError(null)
@@ -113,6 +123,24 @@ export function ProPresenterRemotePanel() {
     { id: 'macros', label: 'Macros', icon: Zap },
     { id: 'timers', label: 'Timers', icon: Clock },
   ] as const
+
+  const triggerSlideByIndex = (slideIndex: number) => {
+    if (!activePres?.uuid) return
+    void proPresenterService.triggerSlideIndex(activePres.uuid, slideIndex)
+  }
+
+  const slidesForGrid: ActivePresentationSlide[] = activePres
+    ? activePres.slides.length > 0
+      ? activePres.slides
+      : Array.from({ length: activePres.totalSlides }, (_, index) => ({
+          uuid: `${activePres.uuid || 'slide'}-${index}`,
+          index,
+          label: `Slide ${index + 1}`,
+          text: '',
+          notes: '',
+          groupName: '',
+        }))
+    : []
 
   // ── Disconnected ────────────────────────────────────────────────────────────
   if (!status.connected) {
@@ -290,63 +318,136 @@ export function ProPresenterRemotePanel() {
       <div className="flex-1 overflow-y-auto">
         {/* ── Slides Tab ──────────────────────────────────────────────────────── */}
         {activeTab === 'slides' && (
-          <div className="p-4 space-y-4">
-            {/* Navigation */}
-            <div className="grid grid-cols-2 gap-3">
+          <div className="p-4 space-y-3">
+            <div className="pp-slides-toolbar">
               <button
-                className="control-btn control-btn-ghost h-16 flex-col gap-1"
+                className="pp-slide-nav-btn"
                 onClick={() => proPresenterService.triggerPreviousSlide()}
+                title="Previous slide"
               >
-                <ChevronLeft size={22} />
-                <span className="text-xs">Previous</span>
+                <ChevronLeft size={16} />
               </button>
               <button
-                className="control-btn control-btn-violet h-16 flex-col gap-1"
+                className="pp-slide-nav-btn pp-slide-nav-btn-next"
                 onClick={() => proPresenterService.triggerNextSlide()}
+                title="Next slide"
               >
-                <ChevronRight size={22} />
-                <span className="text-xs">Next</span>
+                <ChevronRight size={16} />
               </button>
+              <button
+                className="pp-slide-nav-btn"
+                onClick={fetchStatus}
+                title="Refresh slides"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              </button>
+
+              {activePres && (
+                <div className="pp-slide-jump">
+                  <input
+                    className="connect-input pp-slide-jump-input"
+                    type="number"
+                    min={1}
+                    max={
+                      activePres.totalSlides > 0
+                        ? activePres.totalSlides
+                        : undefined
+                    }
+                    value={jumpSlide}
+                    onChange={(e) => setJumpSlide(e.target.value)}
+                    placeholder="#"
+                  />
+                  <button
+                    className="control-btn control-btn-violet h-8 px-3 min-h-0"
+                    onClick={() => {
+                      const idx = parseInt(jumpSlide, 10) - 1
+                      if (
+                        !Number.isNaN(idx) &&
+                        idx >= 0 &&
+                        (!activePres.totalSlides || idx < activePres.totalSlides)
+                      ) {
+                        triggerSlideByIndex(idx)
+                        setJumpSlide('')
+                      }
+                    }}
+                  >
+                    Go
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Jump to Slide */}
-            {activePres && (
-              <div className="flex gap-2">
-                <input
-                  className="connect-input flex-1 text-xs text-center font-mono"
-                  type="number"
-                  min={1}
-                  max={activePres.totalSlides}
-                  value={jumpSlide}
-                  onChange={(e) => setJumpSlide(e.target.value)}
-                  placeholder={`Jump to slide (1–${activePres.totalSlides})`}
-                />
-                <button
-                  className="connect-btn px-4"
-                  onClick={() => {
-                    const idx = parseInt(jumpSlide) - 1
-                    if (!isNaN(idx) && activePres.uuid) {
-                      proPresenterService.triggerSlideIndex(
-                        activePres.uuid,
-                        idx,
-                      )
-                      setJumpSlide('')
-                    }
-                  }}
-                >
-                  Go
-                </button>
+            {!activePres ? (
+              <div className="status-card text-center py-8">
+                <p className="text-sm text-neutral-300">No active presentation</p>
+                <p className="text-xs text-neutral-600 mt-1">
+                  Start a presentation in ProPresenter to see slides.
+                </p>
+              </div>
+            ) : slidesForGrid.length === 0 ? (
+              <div className="status-card text-center py-8">
+                <p className="text-sm text-neutral-300">No slides available</p>
+                <p className="text-xs text-neutral-600 mt-1">
+                  Refresh after loading a presentation with slides.
+                </p>
+              </div>
+            ) : (
+              <div className="pp-slide-grid">
+                {slidesForGrid.map((slide, index) => {
+                  const slideIndex = slide.index ?? index
+                  const isActive = slideIndex === activePres.currentSlide
+                  const thumbnailKey = `${activePres.uuid}:${slideIndex}`
+                  const thumbnailHidden = hiddenSlideThumbnails[thumbnailKey]
+                  const slideTitle =
+                    slide.label?.trim() ||
+                    slide.text?.trim() ||
+                    `Slide ${slideIndex + 1}`
+                  const slideContent =
+                    slide.text?.trim() || slide.notes?.trim() || 'Tap to trigger'
+
+                  return (
+                    <button
+                      key={slide.uuid || `${activePres.uuid}-${slideIndex}`}
+                      className={`pp-slide-card ${isActive ? 'pp-slide-card-active' : ''}`}
+                      onClick={() => triggerSlideByIndex(slideIndex)}
+                    >
+                      <div className="pp-slide-thumb">
+                        {!thumbnailHidden && activePres.uuid ? (
+                          <img
+                            className="pp-slide-thumb-image"
+                            src={proPresenterService.getPresentationThumbnailUrl(
+                              activePres.uuid,
+                              slideIndex,
+                              320,
+                              'jpeg',
+                            )}
+                            alt={`Slide ${slideIndex + 1} preview`}
+                            loading="lazy"
+                            onError={() => {
+                              setHiddenSlideThumbnails((previous) => ({
+                                ...previous,
+                                [thumbnailKey]: true,
+                              }))
+                            }}
+                          />
+                        ) : (
+                          <div className="pp-slide-thumb-fallback">No Preview</div>
+                        )}
+                      </div>
+                      <div className="pp-slide-card-top">
+                        <span className="pp-slide-number">Slide {slideIndex + 1}</span>
+                        {isActive && <span className="pp-slide-live-pill">Live</span>}
+                      </div>
+                      <p className="pp-slide-title">{slideTitle}</p>
+                      <p className="pp-slide-subtitle">{slideContent}</p>
+                      {slide.groupName && (
+                        <p className="pp-slide-meta">{slide.groupName}</p>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             )}
-
-            {/* Refresh */}
-            <button
-              className="control-btn control-btn-ghost w-full"
-              onClick={fetchStatus}
-            >
-              <RefreshCw size={13} />
-              Refresh Status
-            </button>
           </div>
         )}
 
