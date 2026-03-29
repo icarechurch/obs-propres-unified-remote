@@ -30,6 +30,13 @@ import {
   Presentation,
   Lock,
 } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface ActivePres {
   name: string
@@ -404,32 +411,44 @@ export function ProPresenterRemotePanel() {
             </div>
 
             <div className="flex items-center gap-2">
-              <select
-                className="connect-input h-8 py-1.5 text-xs"
-                value={selectedPresentationUUID}
-                onChange={(event) => {
-                  setSelectedPresentationUUID(event.target.value)
-                  setPresentationError(null)
-                }}
-                disabled={
-                  refreshingPresentationList ||
-                  switchingPresentation ||
-                  libraryPresentations.length === 0
-                }
-              >
-                {libraryPresentations.length === 0 ? (
-                  <option value="">No presentations found</option>
-                ) : (
-                  libraryPresentations.map((item) => (
-                    <option
-                      key={`${item.library.uuid || item.library.name}-${item.presentation.uuid}`}
-                      value={item.presentation.uuid}
-                    >
-                      {item.presentation.name} ({item.library.name})
-                    </option>
-                  ))
-                )}
-              </select>
+              <div className="min-w-0 flex-1">
+                <Select
+                  value={selectedPresentationUUID}
+                  onValueChange={(value) => {
+                    setSelectedPresentationUUID(value)
+                    setPresentationError(null)
+                  }}
+                  disabled={
+                    refreshingPresentationList ||
+                    switchingPresentation ||
+                    libraryPresentations.length === 0
+                  }
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full min-w-0 border-neutral-700 bg-neutral-900 text-neutral-100 hover:bg-neutral-800 data-[placeholder]:text-neutral-500 focus-visible:border-violet-400/60 focus-visible:ring-violet-400/25 *:data-[slot=select-value]:text-left *:data-[slot=select-value]:text-xs *:data-[slot=select-value]:font-medium"
+                  >
+                    <SelectValue
+                      placeholder={
+                        libraryPresentations.length === 0
+                          ? 'No presentations found'
+                          : 'Select presentation'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="border-neutral-700 bg-neutral-900 text-neutral-100">
+                    {libraryPresentations.map((item) => (
+                      <SelectItem
+                        key={`${item.library.uuid || item.library.name}-${item.presentation.uuid}`}
+                        value={item.presentation.uuid}
+                        className="text-xs focus:bg-violet-500/20 focus:text-violet-100"
+                      >
+                        {item.presentation.name} ({item.library.name})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               <button
                 className="control-btn control-btn-violet h-8 px-3 min-h-0 whitespace-nowrap"
