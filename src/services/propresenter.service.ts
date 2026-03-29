@@ -456,6 +456,59 @@ class ProPresenterService {
     )
   }
 
+  private parsePlaylistItemIdentifier(
+    value: RawPlaylistEntry,
+  ): RawPresentationID | null {
+    const raw = value as Record<string, unknown>
+    const item =
+      raw.item && typeof raw.item === 'object'
+        ? (raw.item as Record<string, unknown>)
+        : null
+
+    return (
+      this.parseIdentifier(value.item?.id) ??
+      this.parseIdentifier(value.item_id) ??
+      this.parseIdentifier(item?.id) ??
+      this.parseIdentifier(value.presentation?.id) ??
+      this.parseIdentifier(value.presentation_id) ??
+      this.parseIdentifier(item?.presentation) ??
+      this.parseIdentifier(item?.presentation_id) ??
+      this.parseIdentifier(raw.presentation) ??
+      this.parseIdentifier(raw.item) ??
+      this.parseIdentifier(value.id) ??
+      this.parseIdentifier(value)
+    )
+  }
+
+  private parsePlaylistItemIndex(value: RawPlaylistEntry): number | null {
+    const raw = value as Record<string, unknown>
+    const item =
+      raw.item && typeof raw.item === 'object'
+        ? (raw.item as Record<string, unknown>)
+        : null
+
+    const candidates: unknown[] = [
+      value.item?.id?.index,
+      value.item_id?.index,
+      item?.id && typeof item.id === 'object'
+        ? (item.id as Record<string, unknown>).index
+        : undefined,
+      value.presentation?.id?.index,
+      value.presentation_id?.index,
+      value.id?.index,
+      (value as { index?: unknown }).index,
+      raw.index,
+    ]
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+        return Math.max(Math.floor(candidate), 0)
+      }
+    }
+
+    return null
+  }
+
   private parsePlaylistPresentationIdentifier(
     value: RawPlaylistEntry,
   ): RawPresentationID | null {
@@ -884,13 +937,19 @@ class ProPresenterService {
 
         return items
           .map((entry) => {
-            const itemIdentifier = this.parsePlaylistIdentifier(entry)
+            const itemIdentifier = this.parsePlaylistItemIdentifier(entry)
             if (!itemIdentifier) return null
+
+            const parsedItemIndex = this.parsePlaylistItemIndex(entry)
 
             const normalizedItem = this.normalizeIdentifier(
               itemIdentifier,
               'Untitled Item',
             )
+
+            if (parsedItemIndex !== null) {
+              normalizedItem.index = parsedItemIndex
+            }
 
             if (!normalizedItem.uuid) return null
 
@@ -940,11 +999,28 @@ class ProPresenterService {
   async triggerPlaylistItem(
     playlistUUID: string,
     itemUUID: string,
+    itemIndex?: number,
   ): Promise<boolean> {
     const playlistTarget = playlistUUID.trim()
     const itemTarget = itemUUID.trim()
 
-    if (!playlistTarget || !itemTarget) return false
+    const normalizedIndex =
+      typeof itemIndex === 'number' && Number.isFinite(itemIndex)
+        ? Math.max(Math.floor(itemIndex), 0)
+        : null
+
+    if (!playlistTarget) return false
+
+    if (normalizedIndex !== null) {
+      const triggeredByIndex = await this.requestOk(
+        `/v1/playlist/${encodeURIComponent(playlistTarget)}/${normalizedIndex}/trigger`,
+        'GET',
+      )
+
+      if (triggeredByIndex) return true
+    }
+
+    if (!itemTarget) return false
 
     return this.requestOk(
       `/v1/playlist/${encodeURIComponent(playlistTarget)}/item/${encodeURIComponent(itemTarget)}/trigger`,
