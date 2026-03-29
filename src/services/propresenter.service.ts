@@ -88,7 +88,8 @@ class ProPresenterService {
   private _connected = false
   private listeners: Array<() => void> = []
   private pollInterval: ReturnType<typeof setInterval> | null = null
-  private versionPath: '/v1/version' | '/version' = '/v1/version'
+  // Prefer /version first to avoid noisy 404s on newer ProPresenter builds.
+  private versionPath: '/v1/version' | '/version' = '/version'
 
   subscribe(fn: () => void) {
     this.listeners.push(fn)
