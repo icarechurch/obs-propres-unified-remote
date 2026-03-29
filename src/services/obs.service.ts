@@ -23,6 +23,8 @@ export interface OBSStatus {
   streaming: boolean
   recording: boolean
   currentScene: string
+  currentPreviewScene: string
+  studioModeEnabled: boolean
   scenes: OBSScene[]
 }
 
@@ -42,6 +44,8 @@ class OBSService {
   private _streaming = false
   private _recording = false
   private _currentScene = ''
+  private _currentPreviewScene = ''
+  private _studioModeEnabled = false
   private _scenes: OBSScene[] = []
   private listeners: Array<() => void> = []
 
@@ -63,6 +67,16 @@ class OBSService {
       this.notify()
     })
 
+    this.obs.on('CurrentPreviewSceneChanged', (data) => {
+      this._currentPreviewScene = data.sceneName
+      this.notify()
+    })
+
+    this.obs.on('StudioModeStateChanged', (data) => {
+      this._studioModeEnabled = data.studioModeEnabled
+      this.notify()
+    })
+
     this.obs.on('SceneListChanged', (data) => {
       this._scenes = toSceneList(data.scenes as unknown[])
       this.notify()
@@ -70,6 +84,8 @@ class OBSService {
 
     this.obs.on('ConnectionClosed', () => {
       this._connected = false
+      this._studioModeEnabled = false
+      this._currentPreviewScene = ''
       this.notify()
     })
   }
@@ -91,6 +107,8 @@ class OBSService {
       streaming: this._streaming,
       recording: this._recording,
       currentScene: this._currentScene,
+      currentPreviewScene: this._currentPreviewScene,
+      studioModeEnabled: this._studioModeEnabled,
       scenes: this._scenes,
     }
   }
@@ -118,10 +136,23 @@ class OBSService {
       this._recording = recordStatus.outputActive
       this._scenes = toSceneList(sceneList.scenes as unknown[])
       this._currentScene = currentScene.currentProgramSceneName
+
+      const studioModeStatus = await this.obs.call('GetStudioModeEnabled')
+      this._studioModeEnabled = studioModeStatus.studioModeEnabled
+
+      if (this._studioModeEnabled) {
+        const previewScene = await this.obs.call('GetCurrentPreviewScene')
+        this._currentPreviewScene = previewScene.currentPreviewSceneName
+      } else {
+        this._currentPreviewScene = ''
+      }
+
       this.notify()
       return { success: true }
     } catch (err) {
       this._connected = false
+      this._studioModeEnabled = false
+      this._currentPreviewScene = ''
       this.notify()
       return { success: false, error: (err as Error).message }
     }
@@ -134,6 +165,8 @@ class OBSService {
       // ignore
     }
     this._connected = false
+    this._studioModeEnabled = false
+    this._currentPreviewScene = ''
     this.notify()
   }
 
@@ -160,6 +193,54 @@ class OBSService {
   async switchScene(sceneName: string) {
     if (!this._connected) return
     await this.obs.call('SetCurrentProgramScene', { sceneName })
+  }
+
+  async setStudioModeEnabled(studioModeEnabled: boolean) {
+    if (!this._connected) return
+    await this.obs.call('SetStudioModeEnabled', { studioModeEnabled })
+    this._studioModeEnabled = studioModeEnabled
+
+    if (!studioModeEnabled) {
+      this._currentPreviewScene = ''
+      this.notify()
+      return
+    }
+
+    const previewScene = await this.obs.call('GetCurrentPreviewScene')
+    this._currentPreviewScene = previewScene.currentPreviewSceneName
+    this.notify()
+  }
+
+  async setPreviewScene(sceneName: string) {
+    if (!this._connected || !sceneName) return
+    if (!this._studioModeEnabled) {
+      throw new Error(
+        'OBS Studio Mode is disabled. Enable it in OBS to set preview scenes.',
+      )
+    }
+    await this.obs.call('SetCurrentPreviewScene', { sceneName })
+    this._currentPreviewScene = sceneName
+    this.notify()
+  }
+
+  async transitionPreviewToProgram() {
+    if (!this._connected) return
+    if (!this._studioModeEnabled) {
+      throw new Error(
+        'OBS Studio Mode is disabled. Enable it in OBS to transition preview to program.',
+      )
+    }
+
+    await this.obs.call('TriggerStudioModeTransition')
+
+    const [currentScene, previewScene] = await Promise.all([
+      this.obs.call('GetCurrentProgramScene'),
+      this.obs.call('GetCurrentPreviewScene'),
+    ])
+
+    this._currentScene = currentScene.currentProgramSceneName
+    this._currentPreviewScene = previewScene.currentPreviewSceneName
+    this.notify()
   }
 
   async createScene(sceneName: string) {
@@ -251,6 +332,19 @@ class OBSService {
     quality = 70,
   ): Promise<string | null> {
     return this.getSceneScreenshot(this._currentScene, width, height, quality)
+  }
+
+  async getPreviewSceneScreenshot(
+    width = 640,
+    height = 360,
+    quality = 70,
+  ): Promise<string | null> {
+    return this.getSceneScreenshot(
+      this._currentPreviewScene,
+      width,
+      height,
+      quality,
+    )
   }
 
   async getSceneScreenshot(

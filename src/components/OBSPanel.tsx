@@ -288,6 +288,7 @@ export function OBSPanel() {
     setStudioActionError(null)
     if (localStudioMode) {
       setLocalPreviewScene(sceneName)
+      void refreshLocalPreview(true)
       return
     }
     await obsService.switchScene(sceneName)
@@ -296,11 +297,22 @@ export function OBSPanel() {
   const handleTakePreviewToProgram = async () => {
     if (!localPreviewScene || localPreviewScene === status.currentScene) return
 
+    const previousProgramScene = status.currentScene
+    const nextProgramScene = localPreviewScene
+
     setTransitioning(true)
     setStudioActionError(null)
 
     try {
-      await obsService.switchScene(localPreviewScene)
+      await obsService.switchScene(nextProgramScene)
+
+      const sceneToReturnToPreview = previousProgramScene || null
+
+      if (sceneToReturnToPreview) {
+        setLocalPreviewScene(sceneToReturnToPreview)
+      }
+
+      await Promise.all([refreshLivePreview(), refreshLocalPreview()])
     } catch (err) {
       setStudioActionError(
         (err as Error).message ||
