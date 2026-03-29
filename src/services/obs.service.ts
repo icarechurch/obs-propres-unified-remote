@@ -250,10 +250,19 @@ class OBSService {
     height = 360,
     quality = 70,
   ): Promise<string | null> {
-    if (!this._connected || !this._currentScene) return null
+    return this.getSceneScreenshot(this._currentScene, width, height, quality)
+  }
+
+  async getSceneScreenshot(
+    sceneName: string,
+    width = 640,
+    height = 360,
+    quality = 70,
+  ): Promise<string | null> {
+    if (!this._connected || !sceneName) return null
 
     const result = await this.obs.call('GetSourceScreenshot', {
-      sourceName: this._currentScene,
+      sourceName: sceneName,
       imageFormat: 'jpeg',
       imageWidth: width,
       imageHeight: height,

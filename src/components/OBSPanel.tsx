@@ -19,6 +19,8 @@ import {
   Lock,
 } from 'lucide-react'
 
+const LOCAL_STUDIO_MODE_STORAGE_KEY = 'obs.localStudioMode.enabled'
+
 export function OBSPanel() {
   const [status, setStatus] = useState(obsService.status)
   const [protocol, setProtocol] = useState<'ws' | 'wss'>('ws')
@@ -27,6 +29,22 @@ export function OBSPanel() {
   const [password, setPassword] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [localStudioMode, setLocalStudioMode] = useState(false)
+  const [localStudioModeReady, setLocalStudioModeReady] = useState(false)
+  const [localPreviewScene, setLocalPreviewScene] = useState<string | null>(
+    null,
+  )
+  const [localPreviewFrame, setLocalPreviewFrame] = useState<string | null>(
+    null,
+  )
+  const [localPreviewLoading, setLocalPreviewLoading] = useState(false)
+  const [localPreviewError, setLocalPreviewError] = useState<string | null>(
+    null,
+  )
+  const [studioActionError, setStudioActionError] = useState<string | null>(
+    null,
+  )
+  const [transitioning, setTransitioning] = useState(false)
 
   // Scene management
   const [selectedScene, setSelectedScene] = useState<string | null>(null)
@@ -52,6 +70,7 @@ export function OBSPanel() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const previewRequestRef = useRef(0)
+  const localPreviewRequestRef = useRef(0)
 
   useEffect(() => {
     const unsub = obsService.subscribe(() =>
@@ -59,6 +78,22 @@ export function OBSPanel() {
     )
     return unsub
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setLocalStudioMode(
+      window.localStorage.getItem(LOCAL_STUDIO_MODE_STORAGE_KEY) === '1',
+    )
+    setLocalStudioModeReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!localStudioModeReady || typeof window === 'undefined') return
+    window.localStorage.setItem(
+      LOCAL_STUDIO_MODE_STORAGE_KEY,
+      localStudioMode ? '1' : '0',
+    )
+  }, [localStudioMode, localStudioModeReady])
 
   const refreshLivePreview = useCallback(
     async (showLoading = false) => {
@@ -96,6 +131,50 @@ export function OBSPanel() {
     [status.connected, status.currentScene],
   )
 
+  const refreshLocalPreview = useCallback(
+    async (showLoading = false) => {
+      if (!status.connected || !localStudioMode || !localPreviewScene) {
+        setLocalPreviewFrame(null)
+        setLocalPreviewError(null)
+        setLocalPreviewLoading(false)
+        return
+      }
+
+      const requestId = ++localPreviewRequestRef.current
+      if (showLoading) setLocalPreviewLoading(true)
+
+      try {
+        const frame = await obsService.getSceneScreenshot(
+          localPreviewScene,
+          960,
+          540,
+          70,
+        )
+
+        if (requestId !== localPreviewRequestRef.current) return
+
+        if (frame) {
+          setLocalPreviewFrame(frame)
+          setLocalPreviewError(null)
+        } else {
+          setLocalPreviewError(
+            'No frame available for the selected preview scene.',
+          )
+        }
+      } catch (err) {
+        if (requestId !== localPreviewRequestRef.current) return
+        setLocalPreviewError(
+          (err as Error).message || 'Unable to load local preview from OBS.',
+        )
+      } finally {
+        if (requestId === localPreviewRequestRef.current) {
+          setLocalPreviewLoading(false)
+        }
+      }
+    },
+    [status.connected, localStudioMode, localPreviewScene],
+  )
+
   useEffect(() => {
     if (!status.connected || !status.currentScene) {
       previewRequestRef.current += 1
@@ -116,9 +195,80 @@ export function OBSPanel() {
     }
   }, [status.connected, status.currentScene, refreshLivePreview])
 
+  useEffect(() => {
+    if (!status.connected) {
+      localPreviewRequestRef.current += 1
+      setLocalPreviewScene(null)
+      setLocalPreviewFrame(null)
+      setLocalPreviewError(null)
+      setLocalPreviewLoading(false)
+      return
+    }
+
+    if (!localStudioMode) {
+      localPreviewRequestRef.current += 1
+      setLocalPreviewFrame(null)
+      setLocalPreviewError(null)
+      setLocalPreviewLoading(false)
+      return
+    }
+
+    if (status.scenes.length === 0) {
+      setLocalPreviewScene(null)
+      return
+    }
+
+    const sceneExists =
+      localPreviewScene &&
+      status.scenes.some((scene) => scene.sceneName === localPreviewScene)
+
+    if (sceneExists) return
+
+    const fallbackScene =
+      status.scenes.find((scene) => scene.sceneName !== status.currentScene)
+        ?.sceneName ??
+      status.currentScene ??
+      status.scenes[0]?.sceneName ??
+      null
+
+    setLocalPreviewScene(fallbackScene)
+  }, [
+    status.connected,
+    status.scenes,
+    status.currentScene,
+    localStudioMode,
+    localPreviewScene,
+  ])
+
+  useEffect(() => {
+    if (!status.connected || !localStudioMode || !localPreviewScene) {
+      localPreviewRequestRef.current += 1
+      setLocalPreviewFrame(null)
+      setLocalPreviewError(null)
+      setLocalPreviewLoading(false)
+      return
+    }
+
+    void refreshLocalPreview(true)
+    const intervalId = window.setInterval(() => {
+      void refreshLocalPreview()
+    }, 1500)
+
+    return () => {
+      localPreviewRequestRef.current += 1
+      window.clearInterval(intervalId)
+    }
+  }, [
+    status.connected,
+    localStudioMode,
+    localPreviewScene,
+    refreshLocalPreview,
+  ])
+
   const handleConnect = async () => {
     setConnecting(true)
     setError(null)
+    setStudioActionError(null)
     const result = await obsService.connect(host, port, password, protocol)
     if (!result.success) setError(result.error ?? 'Connection failed')
     setConnecting(false)
@@ -126,6 +276,39 @@ export function OBSPanel() {
 
   const handleDisconnect = async () => {
     await obsService.disconnect()
+    setStudioActionError(null)
+  }
+
+  const handleToggleLocalStudioMode = () => {
+    setStudioActionError(null)
+    setLocalStudioMode((current) => !current)
+  }
+
+  const handleSceneTrigger = async (sceneName: string) => {
+    setStudioActionError(null)
+    if (localStudioMode) {
+      setLocalPreviewScene(sceneName)
+      return
+    }
+    await obsService.switchScene(sceneName)
+  }
+
+  const handleTakePreviewToProgram = async () => {
+    if (!localPreviewScene || localPreviewScene === status.currentScene) return
+
+    setTransitioning(true)
+    setStudioActionError(null)
+
+    try {
+      await obsService.switchScene(localPreviewScene)
+    } catch (err) {
+      setStudioActionError(
+        (err as Error).message ||
+          'Unable to transition the local preview scene to program.',
+      )
+    } finally {
+      setTransitioning(false)
+    }
   }
 
   const loadSceneItems = useCallback(async (sceneName: string) => {
@@ -152,6 +335,10 @@ export function OBSPanel() {
     if (sceneName === status.currentScene) return
     await obsService.removeScene(sceneName)
     await obsService.refreshScenes()
+    if (localPreviewScene === sceneName) {
+      setLocalPreviewScene(null)
+      setLocalPreviewFrame(null)
+    }
     if (selectedScene === sceneName) {
       setSelectedScene(null)
       setView('main')
@@ -360,10 +547,63 @@ export function OBSPanel() {
             </p>
           </div>
 
+          {/* Local Studio Mode */}
+          <div className="status-card space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-neutral-500">Studio Mode</p>
+                <p
+                  className={`text-sm font-medium ${localStudioMode ? 'text-amber-300' : 'text-neutral-300'}`}
+                >
+                  {localStudioMode ? 'LOCAL (Async)' : 'Off'}
+                </p>
+              </div>
+
+              <button
+                className={`control-btn ${localStudioMode ? 'control-btn-amber' : 'control-btn-ghost'} min-w-[108px]`}
+                onClick={handleToggleLocalStudioMode}
+              >
+                {localStudioMode ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+
+            {localStudioMode && (
+              <>
+                <p className="text-[11px] text-neutral-500">
+                  Preview selection stays local to this device until you press
+                  Take.
+                </p>
+
+                <button
+                  className={`control-btn w-full ${
+                    localPreviewScene && localPreviewScene !== status.currentScene
+                      ? 'control-btn-primary'
+                      : 'control-btn-ghost'
+                  }`}
+                  onClick={() => void handleTakePreviewToProgram()}
+                  disabled={
+                    transitioning ||
+                    !localPreviewScene ||
+                    localPreviewScene === status.currentScene
+                  }
+                >
+                  <ChevronRight size={14} />
+                  {transitioning ? 'Taking…' : 'Take Preview to Program'}
+                </button>
+
+                {studioActionError && (
+                  <p className="text-[11px] text-red-400">{studioActionError}</p>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Live Camera Feed */}
           <div className="status-card">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-neutral-500">Live Camera Feed</p>
+              <p className="text-xs text-neutral-500">
+                {localStudioMode ? 'Program Feed' : 'Live Camera Feed'}
+              </p>
               <button
                 className="icon-btn text-neutral-500 hover:text-sky-400 disabled:opacity-40"
                 onClick={() => void refreshLivePreview(true)}
@@ -395,6 +635,53 @@ export function OBSPanel() {
               <p className="text-[11px] text-red-400 mt-2">{previewError}</p>
             )}
           </div>
+
+          {localStudioMode && (
+            <div className="status-card">
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs text-neutral-500">Local Preview Feed</p>
+                  <p className="text-[11px] text-neutral-400 truncate">
+                    {localPreviewScene || 'No preview scene selected'}
+                  </p>
+                </div>
+
+                <button
+                  className="icon-btn text-neutral-500 hover:text-amber-300 disabled:opacity-40"
+                  onClick={() => void refreshLocalPreview(true)}
+                  disabled={!localPreviewScene || localPreviewLoading}
+                  title="Refresh local preview"
+                >
+                  <RefreshCw
+                    size={12}
+                    className={localPreviewLoading ? 'animate-spin' : undefined}
+                  />
+                </button>
+              </div>
+
+              <div className="relative w-full aspect-video overflow-hidden rounded-md border border-neutral-700 bg-neutral-900">
+                {localPreviewFrame ? (
+                  <img
+                    src={localPreviewFrame}
+                    alt="Local preview feed"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs text-neutral-500">
+                    {localPreviewLoading
+                      ? 'Loading local preview…'
+                      : 'Select a scene to preview'}
+                  </div>
+                )}
+              </div>
+
+              {localPreviewError && (
+                <p className="text-[11px] text-red-400 mt-2">
+                  {localPreviewError}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Stream / Record Controls */}
           <div className="grid grid-cols-2 gap-3">
@@ -437,77 +724,95 @@ export function OBSPanel() {
             </div>
 
             <div className="space-y-1 max-h-48 overflow-y-auto">
-              {status.scenes.map((scene: OBSScene) => (
-                <div
-                  key={scene.sceneName}
-                  className={`scene-row ${scene.sceneName === status.currentScene ? 'scene-row-active' : ''}`}
-                >
-                  {renamingScene === scene.sceneName ? (
-                    <div className="flex items-center gap-1 flex-1">
-                      <input
-                        className="connect-input flex-1 py-0.5 text-xs"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter')
-                            void handleRenameScene(scene.sceneName)
-                          if (e.key === 'Escape') setRenamingScene(null)
-                        }}
-                        autoFocus
-                      />
-                      <button
-                        className="icon-btn text-green-400"
-                        onClick={() => handleRenameScene(scene.sceneName)}
-                      >
-                        <Check size={12} />
-                      </button>
-                      <button
-                        className="icon-btn text-neutral-500"
-                        onClick={() => setRenamingScene(null)}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <button
-                        className="flex-1 text-left text-sm truncate bg-transparent border-none cursor-pointer text-inherit"
-                        onClick={() => obsService.switchScene(scene.sceneName)}
-                      >
-                        {scene.sceneName}
-                      </button>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          className="icon-btn text-neutral-500 hover:text-sky-400"
-                          onClick={() => handleSelectScene(scene.sceneName)}
-                          title="Edit sources"
-                        >
-                          <Video size={12} />
-                        </button>
-                        <button
-                          className="icon-btn text-neutral-500 hover:text-amber-400"
-                          onClick={() => {
-                            setRenamingScene(scene.sceneName)
-                            setRenameValue(scene.sceneName)
+              {status.scenes.map((scene: OBSScene) => {
+                const isProgram = scene.sceneName === status.currentScene
+                const isPreview =
+                  localStudioMode &&
+                  scene.sceneName === localPreviewScene &&
+                  !isProgram
+
+                return (
+                  <div
+                    key={scene.sceneName}
+                    className={`scene-row ${isProgram ? 'scene-row-active' : ''} ${isPreview ? 'scene-row-preview' : ''}`}
+                  >
+                    {renamingScene === scene.sceneName ? (
+                      <div className="flex items-center gap-1 flex-1">
+                        <input
+                          className="connect-input flex-1 py-0.5 text-xs"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter')
+                              void handleRenameScene(scene.sceneName)
+                            if (e.key === 'Escape') setRenamingScene(null)
                           }}
-                          title="Rename"
+                          autoFocus
+                        />
+                        <button
+                          className="icon-btn text-green-400"
+                          onClick={() => handleRenameScene(scene.sceneName)}
                         >
-                          <Edit3 size={12} />
+                          <Check size={12} />
                         </button>
                         <button
-                          className="icon-btn text-neutral-500 hover:text-red-400 disabled:opacity-30"
-                          onClick={() => handleDeleteScene(scene.sceneName)}
-                          disabled={scene.sceneName === status.currentScene}
-                          title="Delete"
+                          className="icon-btn text-neutral-500"
+                          onClick={() => setRenamingScene(null)}
                         >
-                          <Trash2 size={12} />
+                          <X size={12} />
                         </button>
-                        <ChevronRight size={12} className="text-neutral-600" />
                       </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                    ) : (
+                      <>
+                        <button
+                          className="flex-1 text-left text-sm truncate bg-transparent border-none cursor-pointer text-inherit"
+                          onClick={() => void handleSceneTrigger(scene.sceneName)}
+                        >
+                          {scene.sceneName}
+                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isProgram && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-400">
+                              PGM
+                            </span>
+                          )}
+                          {isPreview && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                              PVW
+                            </span>
+                          )}
+                          <button
+                            className="icon-btn text-neutral-500 hover:text-sky-400"
+                            onClick={() => void handleSelectScene(scene.sceneName)}
+                            title="Edit sources"
+                          >
+                            <Video size={12} />
+                          </button>
+                          <button
+                            className="icon-btn text-neutral-500 hover:text-amber-400"
+                            onClick={() => {
+                              setRenamingScene(scene.sceneName)
+                              setRenameValue(scene.sceneName)
+                            }}
+                            title="Rename"
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                          <button
+                            className="icon-btn text-neutral-500 hover:text-red-400 disabled:opacity-30"
+                            onClick={() => void handleDeleteScene(scene.sceneName)}
+                            disabled={scene.sceneName === status.currentScene}
+                            title="Delete"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                          <ChevronRight size={12} className="text-neutral-600" />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
               {status.scenes.length === 0 && (
                 <p className="text-xs text-neutral-600 text-center py-4">
                   No scenes found
