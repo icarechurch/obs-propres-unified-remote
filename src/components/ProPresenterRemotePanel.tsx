@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   proPresenterService,
   ActivePresentationSlide,
+  LibraryPresentation,
   Macro,
   PPTimer,
 } from '@/services/propresenter.service'
@@ -47,6 +48,14 @@ export function ProPresenterRemotePanel() {
   const [connError, setConnError] = useState<string | null>(null)
 
   const [activePres, setActivePres] = useState<ActivePres | null>(null)
+  const [libraryPresentations, setLibraryPresentations] = useState<
+    LibraryPresentation[]
+  >([])
+  const [selectedPresentationUUID, setSelectedPresentationUUID] = useState('')
+  const [refreshingPresentationList, setRefreshingPresentationList] =
+    useState(false)
+  const [switchingPresentation, setSwitchingPresentation] = useState(false)
+  const [presentationError, setPresentationError] = useState<string | null>(null)
   const [macros, setMacros] = useState<Macro[]>([])
   const [timers, setTimers] = useState<PPTimer[]>([])
   const [activeTab, setActiveTab] = useState<
@@ -93,17 +102,75 @@ export function ProPresenterRemotePanel() {
     }
   }, [])
 
-  useEffect(() => {
-    if (status.connected) {
-      fetchStatus()
-      const interval = setInterval(fetchStatus, 3000)
-      return () => clearInterval(interval)
+  const fetchPresentationOptions = useCallback(async () => {
+    if (!proPresenterService.status.connected) return
+
+    setRefreshingPresentationList(true)
+    try {
+      const presentations = await proPresenterService.getLibraryPresentations()
+      setLibraryPresentations(presentations)
+    } finally {
+      setRefreshingPresentationList(false)
     }
-  }, [status.connected, fetchStatus])
+  }, [])
+
+  useEffect(() => {
+    if (!status.connected) {
+      setLibraryPresentations([])
+      setSelectedPresentationUUID('')
+      setPresentationError(null)
+      return
+    }
+
+    void fetchStatus()
+    void fetchPresentationOptions()
+
+    const statusInterval = setInterval(() => {
+      void fetchStatus()
+    }, 3000)
+
+    const presentationsInterval = setInterval(() => {
+      void fetchPresentationOptions()
+    }, 30000)
+
+    return () => {
+      clearInterval(statusInterval)
+      clearInterval(presentationsInterval)
+    }
+  }, [status.connected, fetchStatus, fetchPresentationOptions])
 
   useEffect(() => {
     setHiddenSlideThumbnails({})
   }, [activePres?.uuid])
+
+  useEffect(() => {
+    if (libraryPresentations.length === 0) {
+      setSelectedPresentationUUID('')
+      return
+    }
+
+    setSelectedPresentationUUID((currentUUID) => {
+      if (
+        currentUUID &&
+        libraryPresentations.some(
+          (item) => item.presentation.uuid === currentUUID,
+        )
+      ) {
+        return currentUUID
+      }
+
+      if (
+        activePres?.uuid &&
+        libraryPresentations.some(
+          (item) => item.presentation.uuid === activePres.uuid,
+        )
+      ) {
+        return activePres.uuid
+      }
+
+      return libraryPresentations[0]?.presentation.uuid ?? ''
+    })
+  }, [libraryPresentations, activePres?.uuid])
 
   const handleConnect = async () => {
     setConnecting(true)
@@ -127,6 +194,26 @@ export function ProPresenterRemotePanel() {
   const triggerSlideByIndex = (slideIndex: number) => {
     if (!activePres?.uuid) return
     void proPresenterService.triggerSlideIndex(activePres.uuid, slideIndex)
+  }
+
+  const handleTriggerPresentation = async () => {
+    const targetUUID = selectedPresentationUUID.trim()
+    if (!targetUUID || switchingPresentation) return
+
+    setSwitchingPresentation(true)
+    setPresentationError(null)
+
+    try {
+      const success = await proPresenterService.triggerPresentation(targetUUID)
+      if (!success) {
+        setPresentationError('Unable to trigger the selected presentation.')
+        return
+      }
+
+      await fetchStatus()
+    } finally {
+      setSwitchingPresentation(false)
+    }
   }
 
   const slidesForGrid: ActivePresentationSlide[] = activePres
@@ -293,6 +380,79 @@ export function ProPresenterRemotePanel() {
               />
             </div>
           )}
+
+          <div className="mt-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-[0.04em] text-neutral-500">
+                Change Presentation
+              </p>
+              {refreshingPresentationList && (
+                <RefreshCw size={11} className="animate-spin text-neutral-500" />
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                className="connect-input h-8 py-1.5 text-xs"
+                value={selectedPresentationUUID}
+                onChange={(event) => {
+                  setSelectedPresentationUUID(event.target.value)
+                  setPresentationError(null)
+                }}
+                disabled={
+                  refreshingPresentationList ||
+                  switchingPresentation ||
+                  libraryPresentations.length === 0
+                }
+              >
+                {libraryPresentations.length === 0 ? (
+                  <option value="">No presentations found</option>
+                ) : (
+                  libraryPresentations.map((item) => (
+                    <option
+                      key={`${item.library.uuid || item.library.name}-${item.presentation.uuid}`}
+                      value={item.presentation.uuid}
+                    >
+                      {item.presentation.name} ({item.library.name})
+                    </option>
+                  ))
+                )}
+              </select>
+
+              <button
+                className="control-btn control-btn-violet h-8 px-3 min-h-0 whitespace-nowrap"
+                onClick={handleTriggerPresentation}
+                disabled={
+                  !selectedPresentationUUID ||
+                  switchingPresentation ||
+                  refreshingPresentationList
+                }
+              >
+                {switchingPresentation ? (
+                  <RefreshCw size={12} className="animate-spin" />
+                ) : (
+                  <Presentation size={12} />
+                )}
+                Present
+              </button>
+
+              <button
+                className="pp-slide-nav-btn"
+                onClick={() => void fetchPresentationOptions()}
+                title="Refresh presentation list"
+                disabled={refreshingPresentationList}
+              >
+                <RefreshCw
+                  size={13}
+                  className={refreshingPresentationList ? 'animate-spin' : ''}
+                />
+              </button>
+            </div>
+
+            {presentationError && (
+              <p className="text-[11px] text-red-400">{presentationError}</p>
+            )}
+          </div>
         </div>
       </div>
 

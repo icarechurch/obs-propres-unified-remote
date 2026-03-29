@@ -27,6 +27,11 @@ export interface ActivePresentationSlide {
   groupName: string
 }
 
+export interface LibraryPresentation {
+  library: { uuid: string; name: string; index: number }
+  presentation: { uuid: string; name: string; index: number }
+}
+
 interface RawPresentationID {
   uuid?: string
   name?: string
@@ -64,6 +69,18 @@ interface RawPresentation {
 
 interface RawActivePresentationResponse extends RawPresentation {
   presentation?: RawPresentation | null
+}
+
+interface RawLibraryItem {
+  id?: RawPresentationID
+  uuid?: string
+  name?: string
+  index?: number
+}
+
+interface RawLibraryContentsResponse {
+  updateType?: 'all' | 'add' | 'remove' | string
+  items?: RawLibraryItem[]
 }
 
 export interface Macro {
@@ -161,6 +178,25 @@ class ProPresenterService {
     }
   }
 
+  private async requestOk(
+    path: string,
+    method = 'GET',
+    body?: unknown,
+  ): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(3000),
+      })
+
+      return res.ok
+    } catch {
+      return false
+    }
+  }
+
   private async requestVersion(): Promise<{
     host_description: string
     host_platform: string
@@ -249,6 +285,54 @@ class ProPresenterService {
   private normalizeText(value: unknown): string {
     if (typeof value !== 'string') return ''
     return value.replace(/\s+/g, ' ').trim()
+  }
+
+  private parseIdentifier(value: unknown): RawPresentationID | null {
+    if (!value || typeof value !== 'object') return null
+
+    const raw = value as Record<string, unknown>
+    const source =
+      raw.id && typeof raw.id === 'object'
+        ? (raw.id as Record<string, unknown>)
+        : raw
+
+    const uuid = typeof source.uuid === 'string' ? source.uuid : undefined
+    const name = typeof source.name === 'string' ? source.name : undefined
+    const index =
+      typeof source.index === 'number' && Number.isFinite(source.index)
+        ? source.index
+        : undefined
+
+    if (!uuid && !name && typeof index !== 'number') return null
+
+    return { uuid, name, index }
+  }
+
+  private normalizeIdentifier(
+    identifier: RawPresentationID | null,
+    fallbackName: string,
+  ): { uuid: string; name: string; index: number } {
+    const index =
+      typeof identifier?.index === 'number' && Number.isFinite(identifier.index)
+        ? Math.max(Math.floor(identifier.index), 0)
+        : 0
+
+    return {
+      uuid: identifier?.uuid ?? '',
+      name: this.normalizeText(identifier?.name) || fallbackName,
+      index,
+    }
+  }
+
+  private toLookupIdentifier(identifier: RawPresentationID): string {
+    const name = this.normalizeText(identifier.name)
+    if (name) return name
+
+    if (typeof identifier.index === 'number' && Number.isFinite(identifier.index)) {
+      return `${Math.max(Math.floor(identifier.index), 0)}`
+    }
+
+    return identifier.uuid ?? ''
   }
 
   private parsePresentationSlides(
@@ -420,6 +504,85 @@ class ProPresenterService {
   async triggerSlideIndex(presentationUUID: string, slideIndex: number) {
     return this.request(
       `/v1/presentation/${presentationUUID}/trigger/${slideIndex}`,
+      'GET',
+    )
+  }
+
+  async getLibraryPresentations(): Promise<LibraryPresentation[]> {
+    const librariesResult = await this.request<RawLibraryItem[]>('/v1/libraries')
+    if (!Array.isArray(librariesResult) || librariesResult.length === 0) return []
+
+    const libraries = librariesResult
+      .map((entry) => this.parseIdentifier(entry))
+      .filter((entry): entry is RawPresentationID => entry !== null)
+
+    if (libraries.length === 0) return []
+
+    const presentationGroups = await Promise.all(
+      libraries.map(async (library) => {
+        const libraryLookup = this.toLookupIdentifier(library)
+        if (!libraryLookup) return [] as LibraryPresentation[]
+
+        const result = await this.request<
+          RawLibraryContentsResponse | RawLibraryItem[]
+        >(`/v1/library/${encodeURIComponent(libraryLookup)}`)
+
+        if (!result) return []
+
+        const items = Array.isArray(result) ? result : result.items ?? []
+        const normalizedLibrary = this.normalizeIdentifier(library, 'Library')
+
+        return items
+          .map((item) => this.parseIdentifier(item))
+          .filter((item): item is RawPresentationID => item !== null)
+          .map((presentation) => {
+            const normalizedPresentation = this.normalizeIdentifier(
+              presentation,
+              'Untitled Presentation',
+            )
+
+            if (!normalizedPresentation.uuid) return null
+
+            return {
+              library: normalizedLibrary,
+              presentation: normalizedPresentation,
+            }
+          })
+          .filter((item): item is LibraryPresentation => item !== null)
+      }),
+    )
+
+    const deduped = new Map<string, LibraryPresentation>()
+
+    presentationGroups.flat().forEach((entry) => {
+      const libraryKey = entry.library.uuid || entry.library.name
+      const presentationKey = entry.presentation.uuid
+      const dedupeKey = `${libraryKey}::${presentationKey}`
+
+      if (!deduped.has(dedupeKey)) {
+        deduped.set(dedupeKey, entry)
+      }
+    })
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      const librarySort = a.library.name.localeCompare(b.library.name)
+      if (librarySort !== 0) return librarySort
+
+      const presentationSort = a.presentation.name.localeCompare(
+        b.presentation.name,
+      )
+      if (presentationSort !== 0) return presentationSort
+
+      return a.presentation.index - b.presentation.index
+    })
+  }
+
+  async triggerPresentation(presentationUUID: string): Promise<boolean> {
+    const target = presentationUUID.trim()
+    if (!target) return false
+
+    return this.requestOk(
+      `/v1/presentation/${encodeURIComponent(target)}/trigger`,
       'GET',
     )
   }
