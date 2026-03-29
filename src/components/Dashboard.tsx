@@ -13,9 +13,6 @@ export function Dashboard() {
           </div>
           <div>
             <h1 className="dashboard-title">Church Media Remote</h1>
-            <p className="dashboard-subtitle">
-              One dashboard · Two critical systems · Zero unnecessary complexity
-            </p>
           </div>
         </div>
         <div className="text-xs text-neutral-600 font-mono hidden sm:block">
