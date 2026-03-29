@@ -92,20 +92,34 @@ interface RawLibraryContentsResponse {
 
 interface RawPlaylistEntry {
   id?: RawPresentationID
+  uuid?: string
+  name?: string
+  index?: number
   type?: string
+  item?: RawPlaylistEntry
+  item_id?: RawPresentationID
   playlist?: RawPlaylistEntry
   playlist_id?: RawPresentationID
   presentation?: RawPlaylistEntry
   presentation_id?: RawPresentationID
+  items?: RawPlaylistEntry[]
+  children?: RawPlaylistEntry[]
 }
 
 interface RawPlaylistIdentifiersResponse {
   items?: RawPlaylistEntry[]
+  playlists?: RawPlaylistEntry[]
+  results?: RawPlaylistEntry[]
+  data?: RawPlaylistEntry[]
 }
 
 interface RawPlaylistContentsResponse {
   updateType?: 'all' | 'add' | 'remove' | string
   items?: RawPlaylistEntry[]
+  playlists?: RawPlaylistEntry[]
+  results?: RawPlaylistEntry[]
+  data?: RawPlaylistEntry[]
+  children?: RawPlaylistEntry[]
 }
 
 export interface Macro {
@@ -349,11 +363,95 @@ class ProPresenterService {
     }
   }
 
+  private extractPlaylistEntries(value: unknown): RawPlaylistEntry[] {
+    if (Array.isArray(value)) {
+      return value.filter(
+        (entry): entry is RawPlaylistEntry =>
+          Boolean(entry) && typeof entry === 'object',
+      )
+    }
+
+    if (!value || typeof value !== 'object') return []
+
+    const raw = value as Record<string, unknown>
+    const candidateKeys = [
+      'items',
+      'playlists',
+      'results',
+      'data',
+      'children',
+      'entries',
+    ]
+
+    for (const key of candidateKeys) {
+      const candidate = raw[key]
+      if (!Array.isArray(candidate)) continue
+
+      const entries = candidate.filter(
+        (entry): entry is RawPlaylistEntry =>
+          Boolean(entry) && typeof entry === 'object',
+      )
+
+      if (entries.length > 0) {
+        return entries
+      }
+    }
+
+    if (this.parseIdentifier(raw)) {
+      return [raw as RawPlaylistEntry]
+    }
+
+    return []
+  }
+
+  private buildLookupIdentifiers(identifier: RawPresentationID): string[] {
+    const candidates: string[] = []
+
+    const uuid = this.normalizeText(identifier.uuid)
+    if (uuid) candidates.push(uuid)
+
+    const name = this.normalizeText(identifier.name)
+    if (name) candidates.push(name)
+
+    if (typeof identifier.index === 'number' && Number.isFinite(identifier.index)) {
+      candidates.push(`${Math.max(Math.floor(identifier.index), 0)}`)
+    }
+
+    return Array.from(new Set(candidates))
+  }
+
+  private async requestPlaylistEntries(paths: string[]): Promise<RawPlaylistEntry[]> {
+    for (const path of paths) {
+      const result = await this.request<
+        | RawPlaylistIdentifiersResponse
+        | RawPlaylistContentsResponse
+        | RawPlaylistEntry[]
+        | RawPlaylistEntry
+      >(path)
+
+      const entries = this.extractPlaylistEntries(result)
+      if (entries.length > 0) return entries
+    }
+
+    return []
+  }
+
   private parsePlaylistIdentifier(value: RawPlaylistEntry): RawPresentationID | null {
+    const raw = value as Record<string, unknown>
+
     return (
       this.parseIdentifier(value.id) ??
+      this.parseIdentifier(value.item?.id) ??
+      this.parseIdentifier(value.item_id) ??
+      this.parseIdentifier(value.playlist?.id) ??
+      this.parseIdentifier(value.playlist) ??
       this.parseIdentifier(value.playlist_id) ??
+      this.parseIdentifier(value.presentation?.id) ??
+      this.parseIdentifier(value.presentation) ??
       this.parseIdentifier(value.presentation_id) ??
+      this.parseIdentifier(raw.item) ??
+      this.parseIdentifier(raw.playlist) ??
+      this.parseIdentifier(raw.presentation) ??
       this.parseIdentifier(value)
     )
   }
@@ -361,10 +459,18 @@ class ProPresenterService {
   private parsePlaylistPresentationIdentifier(
     value: RawPlaylistEntry,
   ): RawPresentationID | null {
+    const raw = value as Record<string, unknown>
+    const item =
+      raw.item && typeof raw.item === 'object'
+        ? (raw.item as Record<string, unknown>)
+        : null
+
     return (
       this.parseIdentifier(value.presentation?.id) ??
       this.parseIdentifier(value.presentation_id) ??
       this.parseIdentifier(value.presentation) ??
+      this.parseIdentifier(item?.presentation) ??
+      this.parseIdentifier(item?.presentation_id) ??
       null
     )
   }
@@ -710,28 +816,42 @@ class ProPresenterService {
 
   // ── Playlists ───────────────────────────────────────────────────────────────
   async getPlaylists(): Promise<PlaylistItem[]> {
-    const result = await this.request<
-      RawPlaylistIdentifiersResponse | RawPlaylistEntry[]
-    >('/v1/playlist/identifiers')
+    const items = await this.requestPlaylistEntries([
+      '/v1/playlist/identifiers',
+      '/v1/playlists',
+      '/v1/playlist',
+    ])
 
-    if (!result) return []
+    const deduped = new Map<string, PlaylistItem>()
 
-    const items = Array.isArray(result) ? result : result.items ?? []
+    items.forEach((entry) => {
+      const id = this.parsePlaylistIdentifier(entry)
+      if (!id) return
 
-    return items
-      .map((entry) => {
-        const id = this.parsePlaylistIdentifier(entry)
-        if (!id) return null
+      const normalizedId = this.normalizeIdentifier(
+        id,
+        this.normalizeText(id.name) || 'Playlist',
+      )
 
-        const normalizedId = this.normalizeIdentifier(id, 'Playlist')
-        if (!normalizedId.uuid) return null
+      const dedupeKey = [
+        this.normalizeText(normalizedId.uuid),
+        this.normalizeText(normalizedId.name),
+        `${normalizedId.index}`,
+      ].join('::')
 
-        return {
+      if (!deduped.has(dedupeKey)) {
+        deduped.set(dedupeKey, {
           id: normalizedId,
           type: this.normalizeText(entry.type) || 'playlist',
-        }
-      })
-      .filter((entry): entry is PlaylistItem => entry !== null)
+        })
+      }
+    })
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      const nameSort = a.id.name.localeCompare(b.id.name)
+      if (nameSort !== 0) return nameSort
+      return a.id.index - b.id.index
+    })
   }
 
   async getPlaylistPresentations(): Promise<PlaylistPresentation[]> {
@@ -740,20 +860,26 @@ class ProPresenterService {
 
     const playlistGroups = await Promise.all(
       playlists.map(async (playlist) => {
-        const playlistLookup =
-          this.toLookupIdentifier(playlist.id) || playlist.id.uuid
-        if (!playlistLookup) return [] as PlaylistPresentation[]
+        const lookupCandidates = this.buildLookupIdentifiers(playlist.id)
+        if (lookupCandidates.length === 0) return [] as PlaylistPresentation[]
 
-        const result = await this.request<
-          RawPlaylistContentsResponse | RawPlaylistEntry[]
-        >(`/v1/playlist/${encodeURIComponent(playlistLookup)}`)
+        const playlistPaths = lookupCandidates.flatMap((lookup) => {
+          const encodedLookup = encodeURIComponent(lookup)
 
-        if (!result) return []
+          return [
+            `/v1/playlist/${encodedLookup}`,
+            `/v1/playlists/${encodedLookup}`,
+            `/v1/playlist/${encodedLookup}/items`,
+            `/v1/playlists/${encodedLookup}/items`,
+          ]
+        })
 
-        const items = Array.isArray(result) ? result : result.items ?? []
+        const items = await this.requestPlaylistEntries(playlistPaths)
+        if (items.length === 0) return []
+
         const normalizedPlaylist = this.normalizeIdentifier(
           playlist.id,
-          'Playlist',
+          this.normalizeText(playlist.id.name) || 'Playlist',
         )
 
         return items
