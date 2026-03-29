@@ -47,6 +47,7 @@ class OBSService {
   private _currentPreviewScene = ''
   private _studioModeEnabled = false
   private _scenes: OBSScene[] = []
+  private _sceneScreenshotFallbackSource = new Map<string, string>()
   private listeners: Array<() => void> = []
 
   constructor() {
@@ -79,6 +80,7 @@ class OBSService {
 
     this.obs.on('SceneListChanged', (data) => {
       this._scenes = toSceneList(data.scenes as unknown[])
+      this._sceneScreenshotFallbackSource.clear()
       this.notify()
     })
 
@@ -86,8 +88,95 @@ class OBSService {
       this._connected = false
       this._studioModeEnabled = false
       this._currentPreviewScene = ''
+      this._sceneScreenshotFallbackSource.clear()
       this.notify()
     })
+  }
+
+  private resolveProgramSceneName(
+    response: Record<string, unknown>,
+  ): string {
+    const sceneName = response.sceneName
+    if (typeof sceneName === 'string' && sceneName.trim().length > 0) {
+      return sceneName
+    }
+
+    const deprecatedName = response.currentProgramSceneName
+    if (
+      typeof deprecatedName === 'string' &&
+      deprecatedName.trim().length > 0
+    ) {
+      return deprecatedName
+    }
+
+    return ''
+  }
+
+  private resolvePreviewSceneName(
+    response: Record<string, unknown>,
+  ): string {
+    const sceneName = response.sceneName
+    if (typeof sceneName === 'string' && sceneName.trim().length > 0) {
+      return sceneName
+    }
+
+    const deprecatedName = response.currentPreviewSceneName
+    if (
+      typeof deprecatedName === 'string' &&
+      deprecatedName.trim().length > 0
+    ) {
+      return deprecatedName
+    }
+
+    return ''
+  }
+
+  private toImageDataUri(
+    screenshotResponse: Record<string, unknown>,
+    imageFormat: string,
+  ): string | null {
+    const directImageData = screenshotResponse.imageData
+    if (typeof directImageData === 'string') {
+      const normalized = directImageData.trim()
+      if (normalized.length === 0) return null
+      if (normalized.startsWith('data:image/')) return normalized
+      return `data:image/${imageFormat};base64,${normalized}`
+    }
+
+    const base64ImageData = screenshotResponse.imageBase64
+    if (typeof base64ImageData === 'string') {
+      const normalized = base64ImageData.trim()
+      if (normalized.length === 0) return null
+      return `data:image/${imageFormat};base64,${normalized}`
+    }
+
+    return null
+  }
+
+  private async fetchProgramSceneName(): Promise<string> {
+    const currentScene = await this.obs.call('GetCurrentProgramScene')
+    return this.resolveProgramSceneName(currentScene as Record<string, unknown>)
+  }
+
+  private async requestSourceScreenshot(
+    sourceName: string,
+    width: number,
+    height: number,
+    quality: number,
+    imageFormat: string,
+  ): Promise<string | null> {
+    const result = await this.obs.call('GetSourceScreenshot', {
+      sourceName,
+      imageFormat,
+      imageWidth: width,
+      imageHeight: height,
+      imageCompressionQuality: quality,
+    })
+
+    return this.toImageDataUri(
+      result as Record<string, unknown>,
+      imageFormat,
+    )
   }
 
   subscribe(fn: () => void) {
@@ -135,14 +224,18 @@ class OBSService {
       this._streaming = streamStatus.outputActive
       this._recording = recordStatus.outputActive
       this._scenes = toSceneList(sceneList.scenes as unknown[])
-      this._currentScene = currentScene.currentProgramSceneName
+      this._currentScene = this.resolveProgramSceneName(
+        currentScene as Record<string, unknown>,
+      )
 
       const studioModeStatus = await this.obs.call('GetStudioModeEnabled')
       this._studioModeEnabled = studioModeStatus.studioModeEnabled
 
       if (this._studioModeEnabled) {
         const previewScene = await this.obs.call('GetCurrentPreviewScene')
-        this._currentPreviewScene = previewScene.currentPreviewSceneName
+        this._currentPreviewScene = this.resolvePreviewSceneName(
+          previewScene as Record<string, unknown>,
+        )
       } else {
         this._currentPreviewScene = ''
       }
@@ -153,6 +246,7 @@ class OBSService {
       this._connected = false
       this._studioModeEnabled = false
       this._currentPreviewScene = ''
+      this._sceneScreenshotFallbackSource.clear()
       this.notify()
       return { success: false, error: (err as Error).message }
     }
@@ -167,6 +261,7 @@ class OBSService {
     this._connected = false
     this._studioModeEnabled = false
     this._currentPreviewScene = ''
+    this._sceneScreenshotFallbackSource.clear()
     this.notify()
   }
 
@@ -207,7 +302,9 @@ class OBSService {
     }
 
     const previewScene = await this.obs.call('GetCurrentPreviewScene')
-    this._currentPreviewScene = previewScene.currentPreviewSceneName
+    this._currentPreviewScene = this.resolvePreviewSceneName(
+      previewScene as Record<string, unknown>,
+    )
     this.notify()
   }
 
@@ -238,8 +335,12 @@ class OBSService {
       this.obs.call('GetCurrentPreviewScene'),
     ])
 
-    this._currentScene = currentScene.currentProgramSceneName
-    this._currentPreviewScene = previewScene.currentPreviewSceneName
+    this._currentScene = this.resolveProgramSceneName(
+      currentScene as Record<string, unknown>,
+    )
+    this._currentPreviewScene = this.resolvePreviewSceneName(
+      previewScene as Record<string, unknown>,
+    )
     this.notify()
   }
 
@@ -331,7 +432,31 @@ class OBSService {
     height = 360,
     quality = 70,
   ): Promise<string | null> {
-    return this.getSceneScreenshot(this._currentScene, width, height, quality)
+    if (!this._connected) return null
+
+    let activeScene = this._currentScene
+
+    if (!activeScene) {
+      activeScene = await this.fetchProgramSceneName()
+      if (!activeScene) return null
+      this._currentScene = activeScene
+    }
+
+    const frame = await this.getSceneScreenshot(activeScene, width, height, quality)
+    if (frame) return frame
+
+    const refreshedActiveScene = await this.fetchProgramSceneName()
+    if (!refreshedActiveScene) return null
+
+    this._currentScene = refreshedActiveScene
+    if (refreshedActiveScene === activeScene) return null
+
+    return this.getSceneScreenshot(
+      refreshedActiveScene,
+      width,
+      height,
+      quality,
+    )
   }
 
   async getPreviewSceneScreenshot(
@@ -355,22 +480,64 @@ class OBSService {
   ): Promise<string | null> {
     if (!this._connected || !sceneName) return null
 
-    const result = await this.obs.call('GetSourceScreenshot', {
-      sourceName: sceneName,
-      imageFormat: 'jpeg',
-      imageWidth: width,
-      imageHeight: height,
-      imageCompressionQuality: quality,
-    })
+    const imageFormat = 'jpeg'
+    const attemptedSources = new Set<string>()
+    let lastError: Error | null = null
 
-    const imageData = (result as Record<string, unknown>).imageData
-    return typeof imageData === 'string' ? imageData : null
+    const tryCapture = async (sourceName: string): Promise<string | null> => {
+      const normalizedSourceName = sourceName.trim()
+      if (!normalizedSourceName || attemptedSources.has(normalizedSourceName)) {
+        return null
+      }
+
+      attemptedSources.add(normalizedSourceName)
+
+      try {
+        return await this.requestSourceScreenshot(
+          normalizedSourceName,
+          width,
+          height,
+          quality,
+          imageFormat,
+        )
+      } catch (err) {
+        lastError = err as Error
+        return null
+      }
+    }
+
+    const cachedFallbackSource = this._sceneScreenshotFallbackSource.get(sceneName)
+    if (cachedFallbackSource) {
+      const frame = await tryCapture(cachedFallbackSource)
+      if (frame) return frame
+    }
+
+    const sceneFrame = await tryCapture(sceneName)
+    if (sceneFrame) {
+      this._sceneScreenshotFallbackSource.delete(sceneName)
+      return sceneFrame
+    }
+
+    const sceneItems = await this.getSceneItems(sceneName)
+    for (const item of sceneItems) {
+      if (!item.sceneItemEnabled) continue
+
+      const sourceFrame = await tryCapture(item.sourceName)
+      if (!sourceFrame) continue
+
+      this._sceneScreenshotFallbackSource.set(sceneName, item.sourceName)
+      return sourceFrame
+    }
+
+    if (lastError) throw lastError
+    return null
   }
 
   async refreshScenes() {
     if (!this._connected) return
     const result = await this.obs.call('GetSceneList')
     this._scenes = toSceneList(result.scenes as unknown[])
+    this._sceneScreenshotFallbackSource.clear()
     this.notify()
   }
 }

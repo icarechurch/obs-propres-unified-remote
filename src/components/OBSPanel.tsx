@@ -736,7 +736,7 @@ export function OBSPanel() {
           {/* Scenes List */}
           <div className="status-card">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-neutral-400 uppercase tracking-wider">
+              <p className="text-sm font-semibold text-neutral-300 uppercase tracking-[0.12em]">
                 Scenes
               </p>
               <button
@@ -744,11 +744,11 @@ export function OBSPanel() {
                 onClick={() => void obsService.refreshScenes()}
                 title="Refresh scenes"
               >
-                <RefreshCw size={12} />
+                <RefreshCw size={14} />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(11.75rem,1fr))] gap-2.5">
               {status.scenes.map((scene: OBSScene) => {
                 const isProgram = scene.sceneName === status.currentScene
                 const isPreview =
@@ -759,25 +759,25 @@ export function OBSPanel() {
                 return (
                   <button
                     key={scene.sceneName}
-                    className={`text-left rounded-md border px-2.5 py-2 transition-colors ${
+                    className={`text-left rounded-lg border px-3 py-3 min-h-[3.25rem] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 ${
                       isProgram
-                        ? 'border-sky-400/35 bg-sky-500/10 text-sky-300'
+                        ? 'border-sky-300/45 bg-sky-500/15 text-sky-200'
                         : isPreview
-                          ? 'border-amber-300/35 bg-amber-400/10 text-amber-200'
-                          : 'border-neutral-700 bg-neutral-900/60 text-neutral-300 hover:text-white hover:border-neutral-500'
+                          ? 'border-amber-300/40 bg-amber-400/15 text-amber-100'
+                          : 'border-neutral-700 bg-neutral-900/60 text-neutral-200 hover:text-white hover:border-neutral-500'
                     }`}
                     onClick={() => void handleSceneTrigger(scene.sceneName)}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-medium">
+                      <span className="truncate text-sm sm:text-base font-semibold leading-tight">
                         {scene.sceneName}
                       </span>
                       {isProgram ? (
-                        <span className="text-[10px] uppercase tracking-wide font-semibold">
+                        <span className="rounded-full border border-sky-300/40 bg-sky-300/15 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] font-bold">
                           Live
                         </span>
                       ) : isPreview ? (
-                        <span className="text-[10px] uppercase tracking-wide font-semibold">
+                        <span className="rounded-full border border-amber-300/40 bg-amber-300/15 px-2 py-0.5 text-[11px] uppercase tracking-[0.12em] font-bold">
                           Preview
                         </span>
                       ) : null}
@@ -786,7 +786,7 @@ export function OBSPanel() {
                 )
               })}
               {status.scenes.length === 0 && (
-                <p className="text-xs text-neutral-600 text-center py-4 col-span-2">
+                <p className="text-sm text-neutral-500 text-center py-4 col-span-full">
                   No scenes found
                 </p>
               )}
