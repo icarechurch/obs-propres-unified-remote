@@ -17,6 +17,30 @@ export interface ActivePresentation {
   presentationSlideCount: number
 }
 
+interface RawPresentationID {
+  uuid?: string
+  name?: string
+  index?: number
+}
+
+interface RawPresentationGroup {
+  slides?: unknown[]
+}
+
+interface RawPresentation {
+  id?: RawPresentationID
+  groups?: RawPresentationGroup[]
+  current_location?: { index?: number }
+  presentationCurrentSlide?: number
+  presentation_current_slide?: number
+  presentationSlideCount?: number
+  presentation_slide_count?: number
+}
+
+interface RawActivePresentationResponse extends RawPresentation {
+  presentation?: RawPresentation | null
+}
+
 export interface Macro {
   id: { uuid: string; name: string; index: number }
 }
@@ -64,6 +88,7 @@ class ProPresenterService {
   private _connected = false
   private listeners: Array<() => void> = []
   private pollInterval: ReturnType<typeof setInterval> | null = null
+  private versionPath: '/v1/version' | '/version' = '/v1/version'
 
   subscribe(fn: () => void) {
     this.listeners.push(fn)
@@ -110,23 +135,64 @@ class ProPresenterService {
     }
   }
 
+  private async requestVersion(): Promise<{
+    host_description: string
+    host_platform: string
+    api_version: string
+  } | null> {
+    // ProPresenter versions can expose the version route on either path.
+    const paths: Array<'/v1/version' | '/version'> = [
+      this.versionPath,
+      this.versionPath === '/v1/version' ? '/version' : '/v1/version',
+    ]
+
+    for (const path of paths) {
+      const result = await this.request<{
+        host_description: string
+        host_platform: string
+        api_version: string
+      }>(path)
+
+      if (result) {
+        this.versionPath = path
+        return result
+      }
+    }
+
+    return null
+  }
+
   async connect(
     host: string,
     port: number,
     protocol: 'http' | 'https' = 'http',
   ) {
-    this._host = host
-    this._port = port
-    this._protocol = protocol
-    const result = await this.request('/v1/version')
-    this._connected = result !== null
-    this.notify()
+    const normalizedHost =
+      host.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '') ||
+      'localhost'
+    const candidatePorts = [port, 1025, 50001].filter(
+      (value, index, array) => array.indexOf(value) === index,
+    )
 
-    if (this._connected) {
-      this.startPolling()
+    this.stopPolling()
+    this._host = normalizedHost
+    this._protocol = protocol
+
+    for (const candidatePort of candidatePorts) {
+      this._port = candidatePort
+      const result = await this.requestVersion()
+      if (result) {
+        this._connected = true
+        this.notify()
+        this.startPolling()
+        return { success: true, port: candidatePort }
+      }
     }
 
-    return { success: this._connected }
+    this._port = port
+    this._connected = false
+    this.notify()
+    return { success: false }
   }
 
   disconnect() {
@@ -138,7 +204,7 @@ class ProPresenterService {
   private startPolling() {
     this.stopPolling()
     this.pollInterval = setInterval(async () => {
-      const result = await this.request('/v1/version')
+      const result = await this.requestVersion()
       const wasConnected = this._connected
       this._connected = result !== null
       if (wasConnected !== this._connected) {
@@ -156,11 +222,7 @@ class ProPresenterService {
 
   // ── Status ──────────────────────────────────────────────────────────────────
   async getVersion() {
-    return this.request<{
-      host_description: string
-      host_platform: string
-      api_version: string
-    }>('/v1/version')
+    return this.requestVersion()
   }
 
   async getSystemStatus() {
@@ -170,14 +232,72 @@ class ProPresenterService {
   }
 
   async getSlideStatus() {
-    return this.request<{ presentation_slide_index: number }>(
+    return this.request<{
+      current?: { uuid: string; text: string; notes: string }
+      next?: { uuid: string; text: string; notes: string }
+    }>(
       '/v1/status/slide',
     )
   }
 
+  async getPresentationSlideIndex(): Promise<number | null> {
+    const result = await this.request<{
+      presentation_index?: { index?: number } | null
+    }>('/v1/presentation/slide_index')
+
+    const index = result?.presentation_index?.index
+    return typeof index === 'number' && Number.isFinite(index)
+      ? Math.max(index, 0)
+      : null
+  }
+
   // ── Presentation / Slides ────────────────────────────────────────────────────
-  async getActivePresentation() {
-    return this.request<ActivePresentation>('/v1/presentation/active')
+  async getActivePresentation(): Promise<ActivePresentation | null> {
+    const result = await this.request<RawActivePresentationResponse>(
+      '/v1/presentation/active',
+    )
+    if (!result) return null
+
+    const presentation = result.presentation ?? result
+    const id = presentation.id ?? {}
+
+    let currentSlide: number | null =
+      presentation.presentationCurrentSlide ??
+      presentation.presentation_current_slide ??
+      presentation.current_location?.index ??
+      null
+
+    if (typeof currentSlide !== 'number' || !Number.isFinite(currentSlide)) {
+      currentSlide = await this.getPresentationSlideIndex()
+    }
+
+    const groupSlideCount = Array.isArray(presentation.groups)
+      ? presentation.groups.reduce((count, group) => {
+          if (!Array.isArray(group?.slides)) return count
+          return count + group.slides.length
+        }, 0)
+      : 0
+
+    const totalSlides =
+      presentation.presentationSlideCount ??
+      presentation.presentation_slide_count ??
+      groupSlideCount
+
+    return {
+      id: {
+        uuid: id.uuid ?? '',
+        name: id.name ?? 'Unknown',
+        index: typeof id.index === 'number' ? id.index : 0,
+      },
+      presentationCurrentSlide:
+        typeof currentSlide === 'number' && Number.isFinite(currentSlide)
+          ? Math.max(currentSlide, 0)
+          : 0,
+      presentationSlideCount:
+        typeof totalSlides === 'number' && Number.isFinite(totalSlides)
+          ? Math.max(totalSlides, 0)
+          : 0,
+    }
   }
 
   async triggerNextSlide() {

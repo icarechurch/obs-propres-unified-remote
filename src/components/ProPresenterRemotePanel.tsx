@@ -77,6 +77,8 @@ export function ProPresenterRemotePanel() {
           totalSlides: pres.presentationSlideCount ?? 0,
           uuid: pres.id?.uuid ?? '',
         })
+      } else {
+        setActivePres(null)
       }
       setMacros(macroList)
       setTimers(timerList)
