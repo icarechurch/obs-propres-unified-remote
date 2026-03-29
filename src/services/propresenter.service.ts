@@ -32,6 +32,13 @@ export interface LibraryPresentation {
   presentation: { uuid: string; name: string; index: number }
 }
 
+export interface PlaylistPresentation {
+  playlist: { uuid: string; name: string; index: number }
+  item: { uuid: string; name: string; index: number }
+  itemType: string
+  presentation?: { uuid: string; name: string; index: number }
+}
+
 interface RawPresentationID {
   uuid?: string
   name?: string
@@ -81,6 +88,24 @@ interface RawLibraryItem {
 interface RawLibraryContentsResponse {
   updateType?: 'all' | 'add' | 'remove' | string
   items?: RawLibraryItem[]
+}
+
+interface RawPlaylistEntry {
+  id?: RawPresentationID
+  type?: string
+  playlist?: RawPlaylistEntry
+  playlist_id?: RawPresentationID
+  presentation?: RawPlaylistEntry
+  presentation_id?: RawPresentationID
+}
+
+interface RawPlaylistIdentifiersResponse {
+  items?: RawPlaylistEntry[]
+}
+
+interface RawPlaylistContentsResponse {
+  updateType?: 'all' | 'add' | 'remove' | string
+  items?: RawPlaylistEntry[]
 }
 
 export interface Macro {
@@ -322,6 +347,26 @@ class ProPresenterService {
       name: this.normalizeText(identifier?.name) || fallbackName,
       index,
     }
+  }
+
+  private parsePlaylistIdentifier(value: RawPlaylistEntry): RawPresentationID | null {
+    return (
+      this.parseIdentifier(value.id) ??
+      this.parseIdentifier(value.playlist_id) ??
+      this.parseIdentifier(value.presentation_id) ??
+      this.parseIdentifier(value)
+    )
+  }
+
+  private parsePlaylistPresentationIdentifier(
+    value: RawPlaylistEntry,
+  ): RawPresentationID | null {
+    return (
+      this.parseIdentifier(value.presentation?.id) ??
+      this.parseIdentifier(value.presentation_id) ??
+      this.parseIdentifier(value.presentation) ??
+      null
+    )
   }
 
   private toLookupIdentifier(identifier: RawPresentationID): string {
@@ -664,13 +709,119 @@ class ProPresenterService {
   }
 
   // ── Playlists ───────────────────────────────────────────────────────────────
-  async getPlaylists() {
-    return this.request<{ items: PlaylistItem[] }>('/v1/playlist/identifiers')
+  async getPlaylists(): Promise<PlaylistItem[]> {
+    const result = await this.request<
+      RawPlaylistIdentifiersResponse | RawPlaylistEntry[]
+    >('/v1/playlist/identifiers')
+
+    if (!result) return []
+
+    const items = Array.isArray(result) ? result : result.items ?? []
+
+    return items
+      .map((entry) => {
+        const id = this.parsePlaylistIdentifier(entry)
+        if (!id) return null
+
+        const normalizedId = this.normalizeIdentifier(id, 'Playlist')
+        if (!normalizedId.uuid) return null
+
+        return {
+          id: normalizedId,
+          type: this.normalizeText(entry.type) || 'playlist',
+        }
+      })
+      .filter((entry): entry is PlaylistItem => entry !== null)
   }
 
-  async triggerPlaylistItem(playlistUUID: string, itemUUID: string) {
-    return this.request(
-      `/v1/playlist/${playlistUUID}/item/${itemUUID}/trigger`,
+  async getPlaylistPresentations(): Promise<PlaylistPresentation[]> {
+    const playlists = await this.getPlaylists()
+    if (playlists.length === 0) return []
+
+    const playlistGroups = await Promise.all(
+      playlists.map(async (playlist) => {
+        const playlistLookup =
+          this.toLookupIdentifier(playlist.id) || playlist.id.uuid
+        if (!playlistLookup) return [] as PlaylistPresentation[]
+
+        const result = await this.request<
+          RawPlaylistContentsResponse | RawPlaylistEntry[]
+        >(`/v1/playlist/${encodeURIComponent(playlistLookup)}`)
+
+        if (!result) return []
+
+        const items = Array.isArray(result) ? result : result.items ?? []
+        const normalizedPlaylist = this.normalizeIdentifier(
+          playlist.id,
+          'Playlist',
+        )
+
+        return items
+          .map((entry) => {
+            const itemIdentifier = this.parsePlaylistIdentifier(entry)
+            if (!itemIdentifier) return null
+
+            const normalizedItem = this.normalizeIdentifier(
+              itemIdentifier,
+              'Untitled Item',
+            )
+
+            if (!normalizedItem.uuid) return null
+
+            const presentationIdentifier =
+              this.parsePlaylistPresentationIdentifier(entry)
+            const normalizedPresentation = presentationIdentifier
+              ? this.normalizeIdentifier(
+                  presentationIdentifier,
+                  normalizedItem.name,
+                )
+              : undefined
+
+            return {
+              playlist: normalizedPlaylist,
+              item: normalizedItem,
+              itemType: this.normalizeText(entry.type) || 'presentation',
+              presentation: normalizedPresentation,
+            }
+          })
+          .filter((entry): entry is PlaylistPresentation => entry !== null)
+      }),
+    )
+
+    const deduped = new Map<string, PlaylistPresentation>()
+
+    playlistGroups.flat().forEach((entry) => {
+      const playlistKey = entry.playlist.uuid || entry.playlist.name
+      const itemKey = entry.item.uuid || entry.item.name
+      const dedupeKey = `${playlistKey}::${itemKey}`
+
+      if (!deduped.has(dedupeKey)) {
+        deduped.set(dedupeKey, entry)
+      }
+    })
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      const playlistSort = a.playlist.name.localeCompare(b.playlist.name)
+      if (playlistSort !== 0) return playlistSort
+
+      const itemSort = a.item.name.localeCompare(b.item.name)
+      if (itemSort !== 0) return itemSort
+
+      return a.item.index - b.item.index
+    })
+  }
+
+  async triggerPlaylistItem(
+    playlistUUID: string,
+    itemUUID: string,
+  ): Promise<boolean> {
+    const playlistTarget = playlistUUID.trim()
+    const itemTarget = itemUUID.trim()
+
+    if (!playlistTarget || !itemTarget) return false
+
+    return this.requestOk(
+      `/v1/playlist/${encodeURIComponent(playlistTarget)}/item/${encodeURIComponent(itemTarget)}/trigger`,
       'GET',
     )
   }

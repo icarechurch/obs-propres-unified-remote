@@ -3,6 +3,7 @@ import {
   proPresenterService,
   ActivePresentationSlide,
   LibraryPresentation,
+  PlaylistPresentation,
   Macro,
   PPTimer,
 } from '@/services/propresenter.service'
@@ -60,11 +61,19 @@ export function ProPresenterRemotePanel() {
     .replace(/\/.*$/, '')
     .replace(/:\d+$/, '')
 
+  const [presentationSource, setPresentationSource] = useState<
+    'playlist' | 'library'
+  >('playlist')
   const [activePres, setActivePres] = useState<ActivePres | null>(null)
   const [libraryPresentations, setLibraryPresentations] = useState<
     LibraryPresentation[]
   >([])
-  const [selectedPresentationUUID, setSelectedPresentationUUID] = useState('')
+  const [playlistPresentations, setPlaylistPresentations] = useState<
+    PlaylistPresentation[]
+  >([])
+  const [selectedLibraryPresentationUUID, setSelectedLibraryPresentationUUID] =
+    useState('')
+  const [selectedPlaylistItemKey, setSelectedPlaylistItemKey] = useState('')
   const [refreshingPresentationList, setRefreshingPresentationList] =
     useState(false)
   const [switchingPresentation, setSwitchingPresentation] = useState(false)
@@ -120,17 +129,25 @@ export function ProPresenterRemotePanel() {
 
     setRefreshingPresentationList(true)
     try {
-      const presentations = await proPresenterService.getLibraryPresentations()
-      setLibraryPresentations(presentations)
+      if (presentationSource === 'playlist') {
+        const presentations =
+          await proPresenterService.getPlaylistPresentations()
+        setPlaylistPresentations(presentations)
+      } else {
+        const presentations = await proPresenterService.getLibraryPresentations()
+        setLibraryPresentations(presentations)
+      }
     } finally {
       setRefreshingPresentationList(false)
     }
-  }, [])
+  }, [presentationSource])
 
   useEffect(() => {
     if (!status.connected) {
       setLibraryPresentations([])
-      setSelectedPresentationUUID('')
+      setPlaylistPresentations([])
+      setSelectedLibraryPresentationUUID('')
+      setSelectedPlaylistItemKey('')
       setPresentationError(null)
       return
     }
@@ -157,12 +174,48 @@ export function ProPresenterRemotePanel() {
   }, [activePres?.uuid])
 
   useEffect(() => {
-    if (libraryPresentations.length === 0) {
-      setSelectedPresentationUUID('')
+    if (playlistPresentations.length === 0) {
+      setSelectedPlaylistItemKey('')
       return
     }
 
-    setSelectedPresentationUUID((currentUUID) => {
+    setSelectedPlaylistItemKey((currentKey) => {
+      if (
+        currentKey &&
+        playlistPresentations.some(
+          (item) => `${item.playlist.uuid}::${item.item.uuid}` === currentKey,
+        )
+      ) {
+        return currentKey
+      }
+
+      if (activePres?.uuid) {
+        const activeMatch = playlistPresentations.find((item) => {
+          return (
+            item.presentation?.uuid === activePres.uuid ||
+            item.item.uuid === activePres.uuid
+          )
+        })
+
+        if (activeMatch) {
+          return `${activeMatch.playlist.uuid}::${activeMatch.item.uuid}`
+        }
+      }
+
+      const firstItem = playlistPresentations[0]
+      return firstItem
+        ? `${firstItem.playlist.uuid}::${firstItem.item.uuid}`
+        : ''
+    })
+  }, [playlistPresentations, activePres?.uuid])
+
+  useEffect(() => {
+    if (libraryPresentations.length === 0) {
+      setSelectedLibraryPresentationUUID('')
+      return
+    }
+
+    setSelectedLibraryPresentationUUID((currentUUID) => {
       if (
         currentUUID &&
         libraryPresentations.some(
@@ -214,16 +267,46 @@ export function ProPresenterRemotePanel() {
   }
 
   const handleTriggerPresentation = async () => {
-    const targetUUID = selectedPresentationUUID.trim()
-    if (!targetUUID || switchingPresentation) return
+    if (switchingPresentation) return
 
     setSwitchingPresentation(true)
     setPresentationError(null)
 
     try {
-      const success = await proPresenterService.triggerPresentation(targetUUID)
+      let success = false
+
+      if (presentationSource === 'playlist') {
+        const selectedItem = playlistPresentations.find(
+          (item) =>
+            `${item.playlist.uuid}::${item.item.uuid}` ===
+            selectedPlaylistItemKey,
+        )
+
+        if (!selectedItem) {
+          setPresentationError('Select a playlist item to present.')
+          return
+        }
+
+        success = await proPresenterService.triggerPlaylistItem(
+          selectedItem.playlist.uuid,
+          selectedItem.item.uuid,
+        )
+      } else {
+        const targetUUID = selectedLibraryPresentationUUID.trim()
+        if (!targetUUID) {
+          setPresentationError('Select a library presentation to present.')
+          return
+        }
+
+        success = await proPresenterService.triggerPresentation(targetUUID)
+      }
+
       if (!success) {
-        setPresentationError('Unable to trigger the selected presentation.')
+        setPresentationError(
+          presentationSource === 'playlist'
+            ? 'Unable to trigger the selected playlist item.'
+            : 'Unable to trigger the selected library presentation.',
+        )
         return
       }
 
@@ -232,6 +315,14 @@ export function ProPresenterRemotePanel() {
       setSwitchingPresentation(false)
     }
   }
+
+  const isPlaylistSource = presentationSource === 'playlist'
+  const presentationOptionsCount = isPlaylistSource
+    ? playlistPresentations.length
+    : libraryPresentations.length
+  const selectedPresentationValue = isPlaylistSource
+    ? selectedPlaylistItemKey
+    : selectedLibraryPresentationUUID
 
   const slidesForGrid: ActivePresentationSlide[] = activePres
     ? activePres.slides.length > 0
@@ -410,18 +501,51 @@ export function ProPresenterRemotePanel() {
               )}
             </div>
 
+            <div className="flex rounded overflow-hidden border border-neutral-700">
+              <button
+                className={`flex-1 py-1.5 text-[11px] font-medium transition-colors ${
+                  isPlaylistSource
+                    ? 'bg-violet-500/20 text-violet-300'
+                    : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
+                }`}
+                onClick={() => {
+                  setPresentationSource('playlist')
+                  setPresentationError(null)
+                }}
+              >
+                Playlist
+              </button>
+              <button
+                className={`flex-1 py-1.5 text-[11px] font-medium transition-colors border-l border-neutral-700 ${
+                  !isPlaylistSource
+                    ? 'bg-violet-500/20 text-violet-300'
+                    : 'bg-neutral-800 text-neutral-500 hover:text-neutral-300'
+                }`}
+                onClick={() => {
+                  setPresentationSource('library')
+                  setPresentationError(null)
+                }}
+              >
+                Library
+              </button>
+            </div>
+
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
                 <Select
-                  value={selectedPresentationUUID}
+                  value={selectedPresentationValue}
                   onValueChange={(value) => {
-                    setSelectedPresentationUUID(value)
+                    if (isPlaylistSource) {
+                      setSelectedPlaylistItemKey(value)
+                    } else {
+                      setSelectedLibraryPresentationUUID(value)
+                    }
                     setPresentationError(null)
                   }}
                   disabled={
                     refreshingPresentationList ||
                     switchingPresentation ||
-                    libraryPresentations.length === 0
+                    presentationOptionsCount === 0
                   }
                 >
                   <SelectTrigger
@@ -430,22 +554,36 @@ export function ProPresenterRemotePanel() {
                   >
                     <SelectValue
                       placeholder={
-                        libraryPresentations.length === 0
-                          ? 'No presentations found'
-                          : 'Select presentation'
+                        isPlaylistSource
+                          ? presentationOptionsCount === 0
+                            ? 'No playlist items found'
+                            : 'Select playlist item'
+                          : presentationOptionsCount === 0
+                            ? 'No library presentations found'
+                            : 'Select library presentation'
                       }
                     />
                   </SelectTrigger>
                   <SelectContent className="border-neutral-700 bg-neutral-900 text-neutral-100">
-                    {libraryPresentations.map((item) => (
-                      <SelectItem
-                        key={`${item.library.uuid || item.library.name}-${item.presentation.uuid}`}
-                        value={item.presentation.uuid}
-                        className="text-xs focus:bg-violet-500/20 focus:text-violet-100"
-                      >
-                        {item.presentation.name} ({item.library.name})
-                      </SelectItem>
-                    ))}
+                    {isPlaylistSource
+                      ? playlistPresentations.map((item) => (
+                          <SelectItem
+                            key={`${item.playlist.uuid || item.playlist.name}-${item.item.uuid}`}
+                            value={`${item.playlist.uuid}::${item.item.uuid}`}
+                            className="text-xs focus:bg-violet-500/20 focus:text-violet-100"
+                          >
+                            {`${item.presentation?.name || item.item.name} (${item.playlist.name})`}
+                          </SelectItem>
+                        ))
+                      : libraryPresentations.map((item) => (
+                          <SelectItem
+                            key={`${item.library.uuid || item.library.name}-${item.presentation.uuid}`}
+                            value={item.presentation.uuid}
+                            className="text-xs focus:bg-violet-500/20 focus:text-violet-100"
+                          >
+                            {`${item.presentation.name} (${item.library.name})`}
+                          </SelectItem>
+                        ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -454,7 +592,7 @@ export function ProPresenterRemotePanel() {
                 className="control-btn control-btn-violet h-8 px-3 min-h-0 whitespace-nowrap"
                 onClick={handleTriggerPresentation}
                 disabled={
-                  !selectedPresentationUUID ||
+                  !selectedPresentationValue ||
                   switchingPresentation ||
                   refreshingPresentationList
                 }
@@ -470,7 +608,11 @@ export function ProPresenterRemotePanel() {
               <button
                 className="pp-slide-nav-btn"
                 onClick={() => void fetchPresentationOptions()}
-                title="Refresh presentation list"
+                title={
+                  isPlaylistSource
+                    ? 'Refresh playlist items'
+                    : 'Refresh library presentations'
+                }
                 disabled={refreshingPresentationList}
               >
                 <RefreshCw
