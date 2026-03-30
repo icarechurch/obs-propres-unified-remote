@@ -1,4 +1,4 @@
-import { Dashboard } from '@/components/Dashboard'
+import { LandingPage } from '@/components/LandingPage'
 import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_public/')({
@@ -6,5 +6,5 @@ export const Route = createFileRoute('/_public/')({
 })
 
 function Index() {
-  return <Dashboard />
+  return <LandingPage />
 }
