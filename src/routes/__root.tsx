@@ -1,18 +1,16 @@
 import {
   HeadContent,
   Scripts,
-  Link,
-  useLocation,
   createRootRouteWithContext,
 } from '@tanstack/react-router'
 import appCss from '../styles.css?url'
 
 import type { QueryClient } from '@tanstack/react-query'
 import { Toaster } from '@/components/ui/sonner'
-import { Button } from '@/components/ui/button'
 import { ThemeProvider } from 'next-themes'
 import { authMiddleware } from '@/server/functions/auth'
 import { getBaseUrl } from '@/server/functions/request'
+import { NotFound } from '@/components/NotFound'
 import {
   createOGMetaTags,
   generateOGImageUrl,
@@ -59,9 +57,9 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     const ogImageUrl = generateOGImageUrl(config, baseUrl)
 
     const metadata: OGMetaTags = {
-      title: 'Church Bulletin App',
+      title: 'OBS-ProPresenter Unified Remote Control',
       description:
-        'A minimalistic, dark-themed church bulletin web app with a clean and reverent UI/UX for displaying church information and announcements.',
+        'Combining and simplifying remote control for OBS and ProPresenter into a single, intuitive web app.',
       image: ogImageUrl,
       url: typeof window !== 'undefined' ? window.location.href : baseUrl,
     }
@@ -78,12 +76,12 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
           content: 'width=device-width, initial-scale=1',
         },
         {
-          title: 'Church Bulletin App',
+          title: 'OBS-ProPresenter Unified Remote Control',
         },
         {
           name: 'description',
           content:
-            'A minimalistic, dark-themed church bulletin web app with a clean and reverent UI/UX for displaying church information and announcements.',
+            'Combining and simplifying remote control for OBS and ProPresenter into a single, intuitive web app.',
         },
         ...ogTags.meta,
       ],
@@ -110,44 +108,9 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     }
   },
 
-  notFoundComponent: RootNotFound,
+  notFoundComponent: NotFound,
   shellComponent: RootDocument,
 })
-
-function RootNotFound() {
-  const location = useLocation()
-
-  return (
-    <main className="mx-auto flex min-h-[70vh] w-full max-w-3xl flex-col items-center justify-center px-6 py-16 text-center">
-      <p className="text-sm font-medium tracking-[0.2em] text-muted-foreground">
-        ERROR 404
-      </p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
-        This page could not be found
-      </h1>
-      <p className="mt-4 max-w-xl text-sm text-muted-foreground sm:text-base">
-        The route you requested does not exist in this dashboard. Check the URL
-        or use one of the options below to continue.
-      </p>
-
-      <div className="mt-6 rounded-md border border-border bg-card px-4 py-3 font-mono text-xs text-muted-foreground sm:text-sm">
-        Requested path: {location.pathname}
-      </div>
-
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button asChild>
-          <Link to="/">Go To Dashboard</Link>
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => window.history.back()}
-        >
-          Go Back
-        </Button>
-      </div>
-    </main>
-  )
-}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
