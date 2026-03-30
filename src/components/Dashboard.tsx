@@ -1,9 +1,46 @@
+import { useEffect, useState } from 'react'
+import { LoadingScreen } from './LoadingScreen'
 import { OBSPanel } from './OBSPanel'
 import { ProPresenterRemotePanel } from './ProPresenterRemotePanel'
 
+type DashboardLoadingState = 'visible' | 'fading' | 'hidden'
+
+const LOADING_VISIBLE_MS = 2300
+const LOADING_FADE_MS = 420
+
 export function Dashboard() {
+  const [loadingState, setLoadingState] =
+    useState<DashboardLoadingState>('visible')
+
+  useEffect(() => {
+    const fadeTimer = window.setTimeout(() => {
+      setLoadingState('fading')
+    }, LOADING_VISIBLE_MS)
+
+    const hideTimer = window.setTimeout(() => {
+      setLoadingState('hidden')
+    }, LOADING_VISIBLE_MS + LOADING_FADE_MS)
+
+    return () => {
+      window.clearTimeout(fadeTimer)
+      window.clearTimeout(hideTimer)
+    }
+  }, [])
+
+  const showLoadingOverlay = loadingState !== 'hidden'
+
   return (
-    <div className="dashboard">
+    <div className="dashboard" aria-busy={showLoadingOverlay}>
+      {showLoadingOverlay && (
+        <div
+          className={`dashboard-loading-overlay ${
+            loadingState === 'fading' ? 'is-fading' : ''
+          }`}
+        >
+          <LoadingScreen />
+        </div>
+      )}
+
       {/* Header */}
       <header className="dashboard-header">
         <div className="flex items-center gap-3">

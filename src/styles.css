@@ -48,6 +48,7 @@ body {
   height: 100dvh;
   background: var(--bg-base);
   overflow: hidden;
+  position: relative;
 }
 
 .dashboard-header {
@@ -119,6 +120,377 @@ body {
   width: 1px;
   background: var(--border);
   flex-shrink: 0;
+}
+
+/* ── Dashboard Loading Screen ──────────────────────────────────────────────── */
+.dashboard-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  opacity: 1;
+  transition: opacity 420ms cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+
+.dashboard-loading-overlay.is-fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-screen {
+  --loading-accent-rgb: 56, 189, 248;
+  --loading-accent: rgb(var(--loading-accent-rgb));
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 22px;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #06070a 0%, #090b11 100%);
+}
+
+.loading-screen-pp {
+  --loading-accent-rgb: 167, 139, 250;
+}
+
+.loading-screen-atmosphere {
+  position: absolute;
+  inset: -16%;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      44% 42% at 18% 24%,
+      rgba(56, 189, 248, 0.26),
+      transparent 72%
+    ),
+    radial-gradient(
+      42% 40% at 82% 70%,
+      rgba(167, 139, 250, 0.24),
+      transparent 74%
+    ),
+    radial-gradient(
+      38% 38% at 50% 82%,
+      rgba(var(--loading-accent-rgb), 0.2),
+      transparent 76%
+    );
+  animation: loadingAtmosphereShift 9s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.loading-screen-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.24;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+  transform-origin: center;
+  animation: loadingGridDrift 12s linear infinite;
+  will-change: transform;
+}
+
+.loading-screen-shell {
+  position: relative;
+  z-index: 1;
+  width: min(560px, calc(100% - 1rem));
+  border-radius: 24px;
+  border: 1px solid rgba(var(--loading-accent-rgb), 0.34);
+  background: linear-gradient(165deg, rgba(24, 24, 32, 0.95), rgba(15, 15, 23, 0.95));
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(var(--loading-accent-rgb), 0.1) inset;
+  padding: 22px 22px 20px;
+  animation: loadingPanelFloat 3.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+.loading-screen-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.loading-screen-brand-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.loading-screen-brand-chip-obs {
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.42);
+  background: rgba(14, 116, 144, 0.24);
+}
+
+.loading-screen-brand-chip-pp {
+  color: #ddd6fe;
+  border-color: rgba(167, 139, 250, 0.42);
+  background: rgba(109, 40, 217, 0.2);
+}
+
+.loading-screen-brand-link {
+  width: 34px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(56, 189, 248, 0.75),
+    rgba(167, 139, 250, 0.75)
+  );
+}
+
+.loading-screen-kicker {
+  margin: 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.loading-screen-title {
+  margin: 10px 0 0;
+  text-align: center;
+  color: #f8fafc;
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+}
+
+.loading-screen-subtitle {
+  margin: 8px 0 0;
+  text-align: center;
+  color: #a7b5ca;
+  font-size: 13px;
+}
+
+.loading-screen-stages {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.loading-stage-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(24, 24, 32, 0.75);
+  color: var(--text-secondary);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  transition:
+    transform 280ms ease,
+    border-color 280ms ease,
+    background-color 280ms ease,
+    color 280ms ease;
+  will-change: transform, opacity;
+}
+
+.loading-stage-pill.is-active {
+  transform: translate3d(0, -1px, 0);
+  color: #f8fafc;
+}
+
+.loading-stage-pill-obs.is-active {
+  border-color: rgba(56, 189, 248, 0.52);
+  background: rgba(56, 189, 248, 0.16);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.18) inset;
+}
+
+.loading-stage-pill-pp.is-active {
+  border-color: rgba(167, 139, 250, 0.52);
+  background: rgba(167, 139, 250, 0.16);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.18) inset;
+}
+
+.loading-stage-ping {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.45;
+  transform: scale(0.8);
+}
+
+.loading-stage-pill.is-active .loading-stage-ping {
+  animation: loadingPulse 900ms ease-in-out infinite;
+}
+
+.loading-screen-current {
+  position: relative;
+  min-height: 42px;
+  margin-top: 14px;
+}
+
+.loading-screen-current-line {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  opacity: 0;
+  transform: translate3d(0, 6px, 0);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+
+.loading-screen-current-line.is-active {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.loading-screen-current-label {
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.2;
+  color: #f8fafc;
+}
+
+.loading-screen-current-detail {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.loading-screen-progress {
+  margin-top: 16px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(71, 85, 105, 0.5);
+  overflow: hidden;
+}
+
+.loading-screen-progress-track {
+  display: block;
+  width: 36%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--loading-accent-rgb), 0),
+    rgba(var(--loading-accent-rgb), 0.98),
+    rgba(var(--loading-accent-rgb), 0)
+  );
+  animation: loadingProgressSweep 1.3s linear infinite;
+  will-change: transform;
+}
+
+@keyframes loadingAtmosphereShift {
+  0%,
+  100% {
+    opacity: 0.88;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(-1.4%, 1.2%, 0) scale(1.04);
+  }
+}
+
+@keyframes loadingGridDrift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(28px, 28px, 0);
+  }
+}
+
+@keyframes loadingPanelFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -4px, 0);
+  }
+}
+
+@keyframes loadingProgressSweep {
+  from {
+    transform: translate3d(-130%, 0, 0);
+  }
+  to {
+    transform: translate3d(280%, 0, 0);
+  }
+}
+
+@keyframes loadingPulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@media (max-width: 640px) {
+  .loading-screen {
+    padding: 14px;
+  }
+
+  .loading-screen-shell {
+    width: 100%;
+    border-radius: 18px;
+    padding: 18px 16px;
+  }
+
+  .loading-screen-title {
+    font-size: 22px;
+  }
+
+  .loading-screen-stages {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-loading-overlay,
+  .loading-screen-atmosphere,
+  .loading-screen-grid,
+  .loading-screen-shell,
+  .loading-stage-pill,
+  .loading-stage-ping,
+  .loading-screen-current-line,
+  .loading-screen-progress-track {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .loading-screen-current-line {
+    opacity: 0;
+  }
+
+  .loading-screen-current-line.is-active {
+    opacity: 1;
+  }
 }
 
 /* ── Panel Base (shared by OBS and PP panels) ───────────────────────────────── */
