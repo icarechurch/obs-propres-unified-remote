@@ -9,6 +9,11 @@
     "build:node": "tsr generate && FOR_SITES=true vite build",
     "serve": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:report": "playwright show-report",
     "lint": "eslint",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
@@ -78,6 +83,7 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tanstack/eslint-config": "^0.3.0",
     "@tanstack/nitro-v2-vite-plugin": "^1.132.40",
     "@tanstack/router-cli": "^1.132.21",

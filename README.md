@@ -37,7 +37,7 @@ A unified remote control interface for managing both OBS Studio and ProPresenter
 ## Getting Started
 
 ### Prerequisites
-- Node.js v14+ and npm
+- Node.js v18+ and npm
 - OBS Studio (with WebSocket server enabled)
 - ProPresenter (with HTTP API enabled)
 
@@ -59,7 +59,7 @@ npm install
 npm run dev
 ```
 
-The application will be available at `http://localhost:5173`
+The application will be available at `http://localhost:3000`
 
 ### Production Build
 
@@ -107,8 +107,39 @@ src/
 - `npm run dev` – Start development server with hot reload
 - `npm run build` – Build for production
 - `npm run start` – Run production server
+- `npm run test` – Run unit tests with Vitest
+- `npm run test:e2e` – Run all Playwright end-to-end tests
+- `npm run test:e2e:ui` – Open Playwright UI mode for authoring/debugging
+- `npm run test:e2e:headed` – Run Playwright tests in headed mode
+- `npm run test:e2e:debug` – Run Playwright in debug mode
+- `npm run test:e2e:report` – Open the latest Playwright HTML report
 - `npm run lint` – Check code with ESLint
 - `npm run format` – Format code with Prettier
+
+### End-to-End Testing (Playwright)
+
+Playwright is preconfigured to run against the local app on `http://127.0.0.1:3000`.
+
+1. Run all e2e tests:
+```bash
+npm run test:e2e
+```
+
+2. Run a single browser project while building tests:
+```bash
+npx playwright test --project=chromium
+```
+
+3. If your app is already running elsewhere, set a base URL and skip auto-start:
+```bash
+# PowerShell
+$env:PLAYWRIGHT_BASE_URL='http://127.0.0.1:4173'; npm run test:e2e
+
+# bash/zsh
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 npm run test:e2e
+```
+
+Starter e2e tests live in `tests/e2e`.
 
 ## Contributing
 

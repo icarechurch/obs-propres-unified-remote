@@ -11,3 +11,6 @@ count.txt
 .vinxi
 todos.json
 .eslintcache
+playwright-report
+test-results
+blob-report
