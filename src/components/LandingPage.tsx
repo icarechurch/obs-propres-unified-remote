@@ -3,25 +3,23 @@ import {
   ArrowRight,
   CheckCircle2,
   Film,
-  Layers,
   Presentation,
-  ShieldCheck,
   Wifi,
   Zap,
 } from 'lucide-react'
 
-const outcomes = [
+const highlights = [
   {
-    value: '1 Interface',
-    label: 'Control OBS and ProPresenter in one place',
+    value: 'One Workspace',
+    label: 'OBS and ProPresenter control in a single, focused interface.',
   },
   {
-    value: '2 Connections',
-    label: 'OBS WebSocket + ProPresenter API',
+    value: 'Two Live Connections',
+    label: 'OBS WebSocket and ProPresenter API managed side by side.',
   },
   {
-    value: '0 Account Steps',
-    label: 'Open and connect directly, no sign-in needed',
+    value: 'Zero Login Steps',
+    label: 'Open, connect, and operate directly without sign-in friction.',
   },
 ]
 
@@ -29,65 +27,61 @@ const features = [
   {
     title: 'OBS Scene And Source Control',
     description:
-      'Switch scenes, manage preview/program, and run streaming actions without leaving the page.',
+      'Switch scenes, manage preview/program, and run stream actions from one control rail.',
     icon: Film,
   },
   {
     title: 'ProPresenter Slides And Macros',
     description:
-      'Navigate slides, fire macros, and handle transport controls with immediate response.',
+      'Navigate slides, trigger macros, and handle transport commands with immediate feedback.',
     icon: Presentation,
   },
   {
-    title: 'Live Connection Visibility',
+    title: 'Clear Connection Status',
     description:
-      'Connection indicators stay visible so operators can diagnose quickly before service starts.',
+      'Always-visible indicators make pre-service checks and troubleshooting faster for operators.',
     icon: Wifi,
   },
   {
-    title: 'Dual Panel Command Surface',
+    title: 'Pressure-Ready Controls',
     description:
-      'OBS and ProPresenter stay side by side so your team can operate both systems in sync.',
-    icon: Layers,
-  },
-  {
-    title: 'Fast, Pressure-Ready Actions',
-    description:
-      'High-frequency controls are always nearby for moments when every second matters.',
+      'High-use actions stay close so teams can react confidently when every second counts.',
     icon: Zap,
-  },
-  {
-    title: 'Built For Production Reliability',
-    description:
-      'Purpose-driven controls and visual feedback help reduce mistakes during live operations.',
-    icon: ShieldCheck,
   },
 ]
 
 const setupSteps = [
   {
-    title: 'Open The Connect Dashboard',
-    description: 'Use the Connect button to jump straight into the dual control workspace.',
+    title: 'Open Connect Dashboard',
+    description: 'Use Connect to jump directly into the dual-panel remote workspace.',
   },
   {
     title: 'Connect OBS And ProPresenter',
     description:
-      'Enter your host and port values for both systems and establish connection in one screen.',
+      'Enter host and port values for both systems and verify connection state in one screen.',
   },
   {
-    title: 'Run The Service Or Broadcast',
+    title: 'Operate The Event',
     description:
-      'Operate scenes, slides, macros, timers, and transport controls from a single interface.',
+      'Run scenes, slides, macros, timers, and transport controls from one streamlined surface.',
   },
+]
+
+const obsActions = [
+  'Scene and source control',
+  'Preview to program workflow',
+  'Stream and recording actions',
+]
+
+const propresenterActions = [
+  'Slide transport and jump',
+  'Macros and timer control',
+  'Playlist and presentation actions',
 ]
 
 export function LandingPage() {
   return (
     <div className="landing-page">
-      <div className="landing-orb landing-orb-cyan" />
-      <div className="landing-orb landing-orb-violet" />
-      <div className="landing-grid-noise" />
-
       <div className="landing-shell">
         <header className="landing-nav reveal reveal-0">
           <div className="landing-brand">
@@ -109,7 +103,7 @@ export function LandingPage() {
 
         <main className="landing-main">
           <section className="landing-hero">
-            <div className="landing-hero-copy reveal reveal-1">
+            <div className="landing-hero-copy reveal reveal-0">
               <p className="landing-kicker">One command center for live production</p>
 
               <h1 className="landing-title">
@@ -122,12 +116,6 @@ export function LandingPage() {
                 broadcasts.
               </p>
 
-              <div className="landing-badges">
-                <span className="landing-badge">No Sign-In Required</span>
-                <span className="landing-badge">Desktop + Tablet Ready</span>
-                <span className="landing-badge">Live Event Focused</span>
-              </div>
-
               <div className="landing-actions">
                 <Link to="/connect" className="landing-btn landing-btn-primary">
                   Connect Now
@@ -139,67 +127,55 @@ export function LandingPage() {
               </div>
 
               <p className="landing-footnote">
-                Start in seconds: open dashboard, connect endpoints, and take control.
+                No sign-in. No setup wizard. Open and connect in seconds.
               </p>
             </div>
 
-            <aside className="landing-preview reveal reveal-2" aria-label="Live dashboard preview">
-              <div className="landing-preview-header">
-                <span>Live Control Snapshot</span>
-                <span className="landing-preview-pill">Ready To Connect</span>
+            <aside className="landing-surface reveal reveal-1" aria-label="Live dashboard preview">
+              <div className="landing-surface-top">
+                <span className="landing-surface-title">Live Control Snapshot</span>
+                <span className="landing-surface-status">Ready</span>
               </div>
 
-              <div className="landing-preview-panels">
-                <article className="landing-mini-panel landing-mini-panel-obs">
+              <div className="landing-surface-grid">
+                <article className="landing-surface-card landing-surface-card-obs">
                   <header>
                     <span>OBS Studio</span>
                     <span>ws://localhost:4455</span>
                   </header>
                   <ul>
-                    <li>
-                      <CheckCircle2 size={14} />
-                      Scene and source control
-                    </li>
-                    <li>
-                      <CheckCircle2 size={14} />
-                      Preview to program workflow
-                    </li>
-                    <li>
-                      <CheckCircle2 size={14} />
-                      Stream and recording actions
-                    </li>
+                    {obsActions.map((item) => (
+                      <li key={item}>
+                        <CheckCircle2 size={14} />
+                        {item}
+                      </li>
+                    ))}
                   </ul>
                 </article>
 
-                <article className="landing-mini-panel landing-mini-panel-pp">
+                <article className="landing-surface-card landing-surface-card-pp">
                   <header>
                     <span>ProPresenter</span>
                     <span>http://localhost:50001</span>
                   </header>
                   <ul>
-                    <li>
-                      <CheckCircle2 size={14} />
-                      Slide transport and jump
-                    </li>
-                    <li>
-                      <CheckCircle2 size={14} />
-                      Macros and timer control
-                    </li>
-                    <li>
-                      <CheckCircle2 size={14} />
-                      Playlist and presentation actions
-                    </li>
+                    {propresenterActions.map((item) => (
+                      <li key={item}>
+                        <CheckCircle2 size={14} />
+                        {item}
+                      </li>
+                    ))}
                   </ul>
                 </article>
               </div>
             </aside>
           </section>
 
-          <section className="landing-outcomes reveal reveal-2">
-            {outcomes.map((item) => (
-              <article key={item.value} className="landing-outcome-card">
-                <p className="landing-outcome-value">{item.value}</p>
-                <p className="landing-outcome-label">{item.label}</p>
+          <section className="landing-highlights reveal reveal-1">
+            {highlights.map((item) => (
+              <article key={item.value} className="landing-highlight-card">
+                <p className="landing-highlight-value">{item.value}</p>
+                <p className="landing-highlight-label">{item.label}</p>
               </article>
             ))}
           </section>
@@ -215,7 +191,7 @@ export function LandingPage() {
                 <article
                   key={feature.title}
                   className="landing-feature-card reveal"
-                  style={{ animationDelay: `${100 + index * 70}ms` }}
+                  style={{ animationDelay: `${120 + index * 60}ms` }}
                 >
                   <div className="landing-feature-icon">
                     <feature.icon size={18} />
@@ -238,7 +214,7 @@ export function LandingPage() {
                 <li
                   key={step.title}
                   className="landing-step reveal"
-                  style={{ animationDelay: `${120 + index * 90}ms` }}
+                  style={{ animationDelay: `${140 + index * 80}ms` }}
                 >
                   <span className="landing-step-index">0{index + 1}</span>
                   <div>
@@ -252,9 +228,7 @@ export function LandingPage() {
 
           <section className="landing-cta reveal reveal-2">
             <h2>Ready to run your next service with one coordinated remote?</h2>
-            <p>
-              Skip account setup and go directly to your live control dashboard.
-            </p>
+            <p>Go straight to the dashboard and connect your systems when you are ready.</p>
             <Link to="/connect" className="landing-btn landing-btn-primary">
               Connect To Dashboard
               <ArrowRight size={18} />
