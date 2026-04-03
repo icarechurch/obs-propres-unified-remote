@@ -16,6 +16,7 @@ export interface ActivePresentation {
   presentationCurrentSlide: number
   presentationSlideCount: number
   slides: ActivePresentationSlide[]
+  statusCurrentSlideUUID?: string
 }
 
 export interface ActivePresentationSlide {
@@ -67,7 +68,13 @@ interface RawPresentation {
   id?: RawPresentationID
   groups?: RawPresentationGroup[]
   slides?: RawPresentationSlide[]
-  current_location?: { index?: number }
+  current_location?: {
+    index?: number
+    group_index?: number
+    cue_index?: number
+    slide_index?: number
+  }
+  presentation_index?: unknown
   presentationCurrentSlide?: number
   presentation_current_slide?: number
   presentationSlideCount?: number
@@ -363,6 +370,121 @@ class ProPresenterService {
     }
   }
 
+  private parseNonNegativeIndex(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(Math.floor(value), 0)
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (!trimmed) return null
+
+      const parsed = Number(trimmed)
+      if (Number.isFinite(parsed)) {
+        return Math.max(Math.floor(parsed), 0)
+      }
+    }
+
+    return null
+  }
+
+  private parseIndexCandidate(value: unknown): number | null {
+    const direct = this.parseNonNegativeIndex(value)
+    if (direct !== null) return direct
+
+    if (!value || typeof value !== 'object') return null
+
+    const raw = value as Record<string, unknown>
+    return this.parseNonNegativeIndex(raw.index)
+  }
+
+  private resolveGroupedSlideIndex(
+    groupIndex: number,
+    cueIndex: number,
+    groups?: RawPresentationGroup[],
+  ): number | null {
+    if (!Array.isArray(groups) || groups.length === 0) return null
+    if (groupIndex < 0 || groupIndex >= groups.length) return null
+
+    let offset = 0
+
+    for (let index = 0; index < groups.length; index += 1) {
+      const group = groups[index]
+      const groupCount = Array.isArray(group?.slides) ? group.slides.length : 0
+
+      if (index === groupIndex) {
+        return offset + cueIndex
+      }
+
+      offset += groupCount
+    }
+
+    return null
+  }
+
+  private extractSlideIndex(
+    value: unknown,
+    groups?: RawPresentationGroup[],
+  ): number | null {
+    const directIndex = this.parseNonNegativeIndex(value)
+    if (directIndex !== null) return directIndex
+
+    if (!value || typeof value !== 'object') return null
+
+    const raw = value as Record<string, unknown>
+    const nestedKeys = [
+      'presentation_index',
+      'presentationIndex',
+      'current_location',
+      'currentLocation',
+      'current',
+      'location',
+    ]
+
+    for (const key of nestedKeys) {
+      const nestedValue = raw[key]
+      if (typeof nestedValue === 'undefined') continue
+
+      const nestedIndex = this.extractSlideIndex(nestedValue, groups)
+      if (nestedIndex !== null) return nestedIndex
+    }
+
+    const cueCandidates: unknown[] = [
+      raw.index,
+      raw.cue_index,
+      raw.cueIndex,
+      raw.slide_index,
+      raw.slideIndex,
+      raw.item_index,
+      raw.itemIndex,
+      raw.cue,
+    ]
+
+    let cueIndex: number | null = null
+    for (const candidate of cueCandidates) {
+      cueIndex = this.parseIndexCandidate(candidate)
+      if (cueIndex !== null) break
+    }
+
+    if (cueIndex === null) return null
+
+    const groupCandidates: unknown[] = [
+      raw.group_index,
+      raw.groupIndex,
+      raw.group,
+    ]
+
+    let groupIndex: number | null = null
+    for (const candidate of groupCandidates) {
+      groupIndex = this.parseIndexCandidate(candidate)
+      if (groupIndex !== null) break
+    }
+
+    if (groupIndex === null) return cueIndex
+
+    return this.resolveGroupedSlideIndex(groupIndex, cueIndex, groups) ?? cueIndex
+  }
+
   private extractPlaylistEntries(value: unknown): RawPlaylistEntry[] {
     if (Array.isArray(value)) {
       return value.filter(
@@ -613,15 +735,12 @@ class ProPresenterService {
     )
   }
 
-  async getPresentationSlideIndex(): Promise<number | null> {
-    const result = await this.request<{
-      presentation_index?: { index?: number } | null
-    }>('/v1/presentation/slide_index')
+  async getPresentationSlideIndex(
+    groups?: RawPresentationGroup[],
+  ): Promise<number | null> {
+    const result = await this.request<unknown>('/v1/presentation/slide_index')
 
-    const index = result?.presentation_index?.index
-    return typeof index === 'number' && Number.isFinite(index)
-      ? Math.max(index, 0)
-      : null
+    return this.extractSlideIndex(result, groups)
   }
 
   getPresentationThumbnailUrl(
@@ -662,15 +781,44 @@ class ProPresenterService {
       }
     }
 
-    let currentSlide: number | null =
-      presentation.presentationCurrentSlide ??
-      presentation.presentation_current_slide ??
-      presentation.current_location?.index ??
-      null
+    const rawPresentation = presentation as Record<string, unknown>
+    const activePayloadSlide: number | null =
+      this.extractSlideIndex(presentation.presentationCurrentSlide) ??
+      this.extractSlideIndex(presentation.presentation_current_slide) ??
+      this.extractSlideIndex(presentation.current_location, presentation.groups) ??
+      this.extractSlideIndex(rawPresentation.presentation_index, presentation.groups)
 
-    if (typeof currentSlide !== 'number' || !Number.isFinite(currentSlide)) {
-      currentSlide = await this.getPresentationSlideIndex()
-    }
+    // ProPresenter can return stale/constant current-slide values in the active
+    // payload; prefer status endpoints when available.
+    const [statusSlide, slideStatus] = await Promise.all([
+      this.getPresentationSlideIndex(presentation.groups),
+      this.getSlideStatus(),
+    ])
+
+    const statusSlideUUID = this.normalizeText(slideStatus?.current?.uuid)
+    const statusSlideUUIDKey = statusSlideUUID.toLowerCase()
+    const statusSlideByUUID =
+      statusSlideUUIDKey && slides.length > 0
+        ? slides.find(
+            (slide) =>
+              this.normalizeText(slide.uuid).toLowerCase() === statusSlideUUIDKey,
+          )?.index ?? null
+        : null
+
+    const statusSlideByCurrentObject = this.extractSlideIndex(
+      slideStatus?.current,
+      presentation.groups,
+    )
+
+    const currentSlide =
+      typeof statusSlideByUUID === 'number' && Number.isFinite(statusSlideByUUID)
+        ? statusSlideByUUID
+        : typeof statusSlideByCurrentObject === 'number' &&
+            Number.isFinite(statusSlideByCurrentObject)
+        ? statusSlideByCurrentObject
+        : typeof statusSlide === 'number' && Number.isFinite(statusSlide)
+        ? statusSlide
+        : activePayloadSlide
 
     const groupSlideCount = slides.length
 
@@ -687,29 +835,84 @@ class ProPresenterService {
       },
       presentationCurrentSlide:
         typeof currentSlide === 'number' && Number.isFinite(currentSlide)
-          ? Math.max(currentSlide, 0)
+          ? Math.max(Math.floor(currentSlide), 0)
           : 0,
       presentationSlideCount:
         typeof totalSlides === 'number' && Number.isFinite(totalSlides)
           ? Math.max(totalSlides, 0)
           : 0,
       slides,
+      statusCurrentSlideUUID: statusSlideUUID,
     }
   }
 
-  async triggerNextSlide() {
-    return this.request('/v1/trigger/next', 'GET')
+  async triggerNextSlide(): Promise<boolean> {
+    const paths = [
+      '/v1/trigger/next',
+      '/v1/presentation/active/next/trigger',
+      '/v1/presentation/focused/next/trigger',
+    ]
+
+    for (const path of paths) {
+      const ok = await this.requestOk(path, 'GET')
+      if (ok) return true
+    }
+
+    return false
   }
 
-  async triggerPreviousSlide() {
-    return this.request('/v1/trigger/previous', 'GET')
+  async triggerPreviousSlide(): Promise<boolean> {
+    const paths = [
+      '/v1/trigger/previous',
+      '/v1/presentation/active/previous/trigger',
+      '/v1/presentation/focused/previous/trigger',
+    ]
+
+    for (const path of paths) {
+      const ok = await this.requestOk(path, 'GET')
+      if (ok) return true
+    }
+
+    return false
   }
 
-  async triggerSlideIndex(presentationUUID: string, slideIndex: number) {
-    return this.request(
-      `/v1/presentation/${presentationUUID}/trigger/${slideIndex}`,
-      'GET',
-    )
+  async triggerSlideIndex(
+    presentationUUID: string,
+    slideIndex: number,
+  ): Promise<boolean> {
+    const targetUUID = presentationUUID.trim()
+    const normalizedIndex = Math.max(Math.floor(slideIndex), 0)
+    const indexCandidates =
+      normalizedIndex === 0
+        ? [normalizedIndex, normalizedIndex + 1]
+        : [normalizedIndex, normalizedIndex + 1, normalizedIndex - 1]
+
+    const paths: string[] = []
+
+    indexCandidates.forEach((index) => {
+      const encodedIndex = encodeURIComponent(`${index}`)
+
+      // API-documented cue trigger routes for active/focused presentation.
+      paths.push(`/v1/presentation/active/${encodedIndex}/trigger`)
+      paths.push(`/v1/presentation/focused/${encodedIndex}/trigger`)
+
+      if (targetUUID) {
+        const encodedUUID = encodeURIComponent(targetUUID)
+
+        // Backward-compatible fallbacks for builds exposing UUID-scoped routes.
+        paths.push(`/v1/presentation/${encodedUUID}/${encodedIndex}/trigger`)
+        paths.push(`/v1/presentation/${encodedUUID}/trigger/${encodedIndex}`)
+      }
+    })
+
+    const uniquePaths = Array.from(new Set(paths))
+
+    for (const path of uniquePaths) {
+      const ok = await this.requestOk(path, 'GET')
+      if (ok) return true
+    }
+
+    return false
   }
 
   async getLibraryPresentations(): Promise<LibraryPresentation[]> {

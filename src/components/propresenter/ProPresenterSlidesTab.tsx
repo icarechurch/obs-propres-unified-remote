@@ -31,6 +31,11 @@ export function ProPresenterSlidesTab({
   onHideThumbnail,
   getThumbnailUrl,
 }: ProPresenterSlidesTabProps) {
+  const normalizeSlideValue = (value: string | undefined) =>
+    (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+  const statusUUID = normalizeSlideValue(activePres?.statusCurrentSlideUUID)
+
   return (
     <div className="p-4 space-y-3">
       <div className="pp-slides-toolbar">
@@ -108,7 +113,10 @@ export function ProPresenterSlidesTab({
         <div className="pp-slide-grid">
           {slidesForGrid.map((slide, index) => {
             const slideIndex = slide.index ?? index
-            const isActive = slideIndex === activePres.currentSlide
+            const slideUUID = normalizeSlideValue(slide.uuid)
+            const matchesStatusUUID = Boolean(statusUUID && slideUUID === statusUUID)
+            const isActive =
+              matchesStatusUUID || slideIndex === activePres.currentSlide
             const thumbnailKey = `${activePres.uuid}:${slideIndex}`
             const thumbnailHidden = hiddenSlideThumbnails[thumbnailKey]
             const slideTitle =

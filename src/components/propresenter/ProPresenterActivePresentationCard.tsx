@@ -62,6 +62,25 @@ export function ProPresenterActivePresentationCard({
         presentationOptionsCount === 0
       : presentationOptionsCount === 0)
 
+  const normalizeSlideValue = (value: string | undefined) =>
+    (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+  const statusUUID = normalizeSlideValue(activePres?.statusCurrentSlideUUID)
+
+  const statusMatchedSlideIndex = activePres
+    ? activePres.slides.find((slide) => {
+        const slideUUID = normalizeSlideValue(slide.uuid)
+
+        return Boolean(statusUUID && slideUUID === statusUUID)
+      })?.index ?? null
+    : null
+
+  const displayCurrentSlide =
+    typeof statusMatchedSlideIndex === 'number' &&
+    Number.isFinite(statusMatchedSlideIndex)
+      ? statusMatchedSlideIndex
+      : (activePres?.currentSlide ?? 0)
+
   return (
     <div className="px-4 py-3 border-b border-neutral-800">
       <div className="status-card">
@@ -76,7 +95,7 @@ export function ProPresenterActivePresentationCard({
           {activePres && (
             <div className="text-xs text-neutral-400 shrink-0 ml-3 text-right">
               <span className="text-white font-mono font-semibold">
-                {activePres.currentSlide + 1}
+                {displayCurrentSlide + 1}
               </span>
               <span className="text-neutral-600"> / </span>
               <span className="text-neutral-400">{activePres.totalSlides}</span>
@@ -89,7 +108,7 @@ export function ProPresenterActivePresentationCard({
             <div
               className="h-full bg-violet-500 rounded-full transition-all duration-500"
               style={{
-                width: `${((activePres.currentSlide + 1) / activePres.totalSlides) * 100}%`,
+                width: `${((displayCurrentSlide + 1) / activePres.totalSlides) * 100}%`,
               }}
             />
           </div>

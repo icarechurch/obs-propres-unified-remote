@@ -6,6 +6,7 @@ export interface ActivePres {
   totalSlides: number
   uuid: string
   slides: ActivePresentationSlide[]
+  statusCurrentSlideUUID?: string
 }
 
 export type ProPresenterTab =
