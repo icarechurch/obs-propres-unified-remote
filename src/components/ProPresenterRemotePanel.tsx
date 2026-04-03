@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   proPresenterService,
   type ActivePresentationSlide,
@@ -20,6 +20,25 @@ import type {
   ActivePres,
   ProPresenterTab,
 } from '@/components/propresenter/types'
+
+const getPlaylistKey = (playlist: PlaylistPresentation['playlist']) => {
+  const playlistUUID = playlist.uuid.trim()
+  if (playlistUUID) return playlistUUID
+
+  const playlistName = playlist.name.trim()
+  if (playlistName) return `${playlistName}::${playlist.index}`
+
+  return `${playlist.index}`
+}
+
+const getPlaylistItemKey = (item: PlaylistPresentation) => {
+  const playlistKey = getPlaylistKey(item.playlist)
+  const itemUUID = item.item.uuid.trim()
+  if (itemUUID) return `${playlistKey}::${itemUUID}`
+
+  const itemName = item.item.name.trim()
+  return `${playlistKey}::${itemName || item.item.index}`
+}
 
 export function ProPresenterRemotePanel() {
   const [status, setStatus] = useState(proPresenterService.status)
@@ -47,6 +66,7 @@ export function ProPresenterRemotePanel() {
   >([])
   const [selectedLibraryPresentationUUID, setSelectedLibraryPresentationUUID] =
     useState('')
+  const [selectedPlaylistKey, setSelectedPlaylistKey] = useState('')
   const [selectedPlaylistItemKey, setSelectedPlaylistItemKey] = useState('')
   const [refreshingPresentationList, setRefreshingPresentationList] =
     useState(false)
@@ -121,6 +141,7 @@ export function ProPresenterRemotePanel() {
       setLibraryPresentations([])
       setPlaylistPresentations([])
       setSelectedLibraryPresentationUUID('')
+      setSelectedPlaylistKey('')
       setSelectedPlaylistItemKey('')
       setPresentationError(null)
       return
@@ -147,18 +168,38 @@ export function ProPresenterRemotePanel() {
     setHiddenSlideThumbnails({})
   }, [activePres?.uuid])
 
+  const playlistOptions = useMemo(() => {
+    const options = new Map<string, { value: string; label: string }>()
+
+    playlistPresentations.forEach((item) => {
+      const value = getPlaylistKey(item.playlist)
+      if (options.has(value)) return
+
+      const playlistName = item.playlist.name.trim()
+      const label =
+        playlistName ||
+        (item.playlist.index >= 0
+          ? `Playlist ${item.playlist.index + 1}`
+          : 'Playlist')
+
+      options.set(value, { value, label })
+    })
+
+    return Array.from(options.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    )
+  }, [playlistPresentations])
+
   useEffect(() => {
-    if (playlistPresentations.length === 0) {
-      setSelectedPlaylistItemKey('')
+    if (playlistOptions.length === 0) {
+      setSelectedPlaylistKey('')
       return
     }
 
-    setSelectedPlaylistItemKey((currentKey) => {
+    setSelectedPlaylistKey((currentKey) => {
       if (
         currentKey &&
-        playlistPresentations.some(
-          (item) => `${item.playlist.uuid}::${item.item.uuid}` === currentKey,
-        )
+        playlistOptions.some((option) => option.value === currentKey)
       ) {
         return currentKey
       }
@@ -172,16 +213,55 @@ export function ProPresenterRemotePanel() {
         })
 
         if (activeMatch) {
-          return `${activeMatch.playlist.uuid}::${activeMatch.item.uuid}`
+          return getPlaylistKey(activeMatch.playlist)
         }
       }
 
-      const firstItem = playlistPresentations[0]
-      return firstItem
-        ? `${firstItem.playlist.uuid}::${firstItem.item.uuid}`
-        : ''
+      return playlistOptions[0]?.value ?? ''
     })
-  }, [playlistPresentations, activePres?.uuid])
+  }, [playlistOptions, playlistPresentations, activePres?.uuid])
+
+  const filteredPlaylistPresentations = useMemo(() => {
+    if (!selectedPlaylistKey) return []
+
+    return playlistPresentations.filter(
+      (item) => getPlaylistKey(item.playlist) === selectedPlaylistKey,
+    )
+  }, [playlistPresentations, selectedPlaylistKey])
+
+  useEffect(() => {
+    if (filteredPlaylistPresentations.length === 0) {
+      setSelectedPlaylistItemKey('')
+      return
+    }
+
+    setSelectedPlaylistItemKey((currentKey) => {
+      if (
+        currentKey &&
+        filteredPlaylistPresentations.some(
+          (item) => getPlaylistItemKey(item) === currentKey,
+        )
+      ) {
+        return currentKey
+      }
+
+      if (activePres?.uuid) {
+        const activeMatch = filteredPlaylistPresentations.find((item) => {
+          return (
+            item.presentation?.uuid === activePres.uuid ||
+            item.item.uuid === activePres.uuid
+          )
+        })
+
+        if (activeMatch) {
+          return getPlaylistItemKey(activeMatch)
+        }
+      }
+
+      const firstItem = filteredPlaylistPresentations[0]
+      return firstItem ? getPlaylistItemKey(firstItem) : ''
+    })
+  }, [filteredPlaylistPresentations, activePres?.uuid])
 
   useEffect(() => {
     if (libraryPresentations.length === 0) {
@@ -245,9 +325,13 @@ export function ProPresenterRemotePanel() {
       let success = false
 
       if (presentationSource === 'playlist') {
-        const selectedItem = playlistPresentations.find(
-          (item) =>
-            `${item.playlist.uuid}::${item.item.uuid}` === selectedPlaylistItemKey,
+        if (!selectedPlaylistKey) {
+          setPresentationError('Select a playlist first.')
+          return
+        }
+
+        const selectedItem = filteredPlaylistPresentations.find(
+          (item) => getPlaylistItemKey(item) === selectedPlaylistItemKey,
         )
 
         if (!selectedItem) {
@@ -292,7 +376,7 @@ export function ProPresenterRemotePanel() {
 
   const isPlaylistSource = presentationSource === 'playlist'
   const presentationOptionsCount = isPlaylistSource
-    ? playlistPresentations.length
+    ? filteredPlaylistPresentations.length
     : libraryPresentations.length
   const selectedPresentationValue = isPlaylistSource
     ? selectedPlaylistItemKey
@@ -343,12 +427,18 @@ export function ProPresenterRemotePanel() {
         refreshingPresentationList={refreshingPresentationList}
         switchingPresentation={switchingPresentation}
         presentationOptionsCount={presentationOptionsCount}
+        selectedPlaylistValue={selectedPlaylistKey}
         selectedPresentationValue={selectedPresentationValue}
-        playlistPresentations={playlistPresentations}
+        playlistOptions={playlistOptions}
+        playlistPresentations={filteredPlaylistPresentations}
         libraryPresentations={libraryPresentations}
         presentationError={presentationError}
         onSourceChange={(source) => {
           setPresentationSource(source)
+          setPresentationError(null)
+        }}
+        onPlaylistSelectionChange={(value) => {
+          setSelectedPlaylistKey(value)
           setPresentationError(null)
         }}
         onSelectionChange={(value) => {

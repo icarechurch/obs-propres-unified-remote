@@ -18,11 +18,14 @@ interface ProPresenterActivePresentationCardProps {
   refreshingPresentationList: boolean
   switchingPresentation: boolean
   presentationOptionsCount: number
+  selectedPlaylistValue: string
   selectedPresentationValue: string
+  playlistOptions: Array<{ value: string; label: string }>
   playlistPresentations: PlaylistPresentation[]
   libraryPresentations: LibraryPresentation[]
   presentationError: string | null
   onSourceChange: (source: 'playlist' | 'library') => void
+  onPlaylistSelectionChange: (value: string) => void
   onSelectionChange: (value: string) => void
   onTriggerPresentation: () => void
   onRefreshPresentationOptions: () => void
@@ -34,16 +37,30 @@ export function ProPresenterActivePresentationCard({
   refreshingPresentationList,
   switchingPresentation,
   presentationOptionsCount,
+  selectedPlaylistValue,
   selectedPresentationValue,
+  playlistOptions,
   playlistPresentations,
   libraryPresentations,
   presentationError,
   onSourceChange,
+  onPlaylistSelectionChange,
   onSelectionChange,
   onTriggerPresentation,
   onRefreshPresentationOptions,
 }: ProPresenterActivePresentationCardProps) {
   const isPlaylistSource = source === 'playlist'
+  const playlistOptionsCount = playlistOptions.length
+  const disablePlaylistSelect =
+    refreshingPresentationList || switchingPresentation || playlistOptionsCount === 0
+  const disablePresentationSelect =
+    refreshingPresentationList ||
+    switchingPresentation ||
+    (isPlaylistSource
+      ? playlistOptionsCount === 0 ||
+        !selectedPlaylistValue ||
+        presentationOptionsCount === 0
+      : presentationOptionsCount === 0)
 
   return (
     <div className="px-4 py-3 border-b border-neutral-800">
@@ -111,16 +128,45 @@ export function ProPresenterActivePresentationCard({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1">
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1 space-y-2">
+              {isPlaylistSource && (
+                <Select
+                  value={selectedPlaylistValue}
+                  onValueChange={onPlaylistSelectionChange}
+                  disabled={disablePlaylistSelect}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full min-w-0 border-neutral-700 bg-neutral-900 text-neutral-100 hover:bg-neutral-800 data-[placeholder]:text-neutral-500 focus-visible:border-violet-400/60 focus-visible:ring-violet-400/25 *:data-[slot=select-value]:text-left *:data-[slot=select-value]:text-xs *:data-[slot=select-value]:font-medium"
+                  >
+                    <SelectValue
+                      placeholder={
+                        playlistOptionsCount === 0
+                          ? 'No playlists found'
+                          : 'Select playlist'
+                      }
+                    />
+                  </SelectTrigger>
+
+                  <SelectContent className="border-neutral-700 bg-neutral-900 text-neutral-100">
+                    {playlistOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        className="text-xs focus:bg-violet-500/20 focus:text-violet-100"
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
               <Select
                 value={selectedPresentationValue}
                 onValueChange={onSelectionChange}
-                disabled={
-                  refreshingPresentationList ||
-                  switchingPresentation ||
-                  presentationOptionsCount === 0
-                }
+                disabled={disablePresentationSelect}
               >
                 <SelectTrigger
                   size="sm"
@@ -129,9 +175,13 @@ export function ProPresenterActivePresentationCard({
                   <SelectValue
                     placeholder={
                       isPlaylistSource
-                        ? presentationOptionsCount === 0
-                          ? 'No playlist items found'
-                          : 'Select playlist item'
+                        ? playlistOptionsCount === 0
+                          ? 'No playlists found'
+                          : !selectedPlaylistValue
+                            ? 'Select playlist first'
+                            : presentationOptionsCount === 0
+                              ? 'No items in selected playlist'
+                              : 'Select playlist item'
                         : presentationOptionsCount === 0
                           ? 'No library presentations found'
                           : 'Select library presentation'
