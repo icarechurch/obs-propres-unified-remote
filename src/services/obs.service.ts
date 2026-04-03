@@ -12,6 +12,7 @@ export interface OBSScene {
 
 export interface OBSSceneItem {
   sceneItemId: number
+  sceneItemIndex: number
   sourceName: string
   sourceType: string
   inputKind?: string
@@ -429,6 +430,7 @@ class OBSService {
       const item = raw as Record<string, unknown>
       return {
         sceneItemId: Number(item.sceneItemId ?? 0),
+        sceneItemIndex: Number(item.sceneItemIndex ?? 0),
         sourceName: String(item.sourceName ?? ''),
         sourceType: String(item.sourceType ?? ''),
         inputKind: item.inputKind ? String(item.inputKind) : undefined,
@@ -470,6 +472,63 @@ class OBSService {
       inputName,
       inputSettings: { url, width, height },
     })
+  }
+
+  async renameSource(sourceName: string, newSourceName: string) {
+    if (!this._connected) return
+
+    const currentName = sourceName.trim()
+    const nextName = newSourceName.trim()
+
+    if (!currentName) {
+      throw new Error('Source name is required.')
+    }
+
+    if (!nextName) {
+      throw new Error('New source name is required.')
+    }
+
+    if (currentName === nextName) {
+      return
+    }
+
+    try {
+      await this.obs.call('SetInputName', {
+        inputName: currentName,
+        newInputName: nextName,
+      })
+      this._sceneScreenshotFallbackSource.clear()
+      return
+    } catch (err) {
+      const isScene = this._scenes.some(
+        (scene) => scene.sceneName === currentName,
+      )
+
+      if (isScene) {
+        await this.obs.call('SetSceneName', {
+          sceneName: currentName,
+          newSceneName: nextName,
+        })
+        this._sceneScreenshotFallbackSource.clear()
+        return
+      }
+
+      throw err
+    }
+  }
+
+  async setSceneItemEnabled(
+    sceneName: string,
+    sceneItemId: number,
+    sceneItemEnabled: boolean,
+  ) {
+    if (!this._connected) return
+    await this.obs.call('SetSceneItemEnabled', {
+      sceneName,
+      sceneItemId,
+      sceneItemEnabled,
+    })
+    this._sceneScreenshotFallbackSource.clear()
   }
 
   async removeSceneItem(sceneName: string, sceneItemId: number) {

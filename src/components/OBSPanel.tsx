@@ -17,6 +17,10 @@ import {
   RefreshCw,
   Monitor,
   Lock,
+  Eye,
+  EyeOff,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react'
 import {
   AlertDialog,
@@ -74,6 +78,9 @@ export function OBSPanel() {
   const [newSceneName, setNewSceneName] = useState('')
   const [renamingScene, setRenamingScene] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [renamingItemId, setRenamingItemId] = useState<number | null>(null)
+  const [renameItemValue, setRenameItemValue] = useState('')
+  const [itemActionError, setItemActionError] = useState<string | null>(null)
 
   // Browser source
   const [bsName, setBsName] = useState('')
@@ -352,6 +359,9 @@ export function OBSPanel() {
   }, [])
 
   const handleSelectScene = async (sceneName: string) => {
+    setItemActionError(null)
+    setRenamingItemId(null)
+    setRenameItemValue('')
     setSelectedScene(sceneName)
     await loadSceneItems(sceneName)
     setView('scenes')
@@ -417,8 +427,108 @@ export function OBSPanel() {
 
   const handleRemoveItem = async (item: OBSSceneItem) => {
     if (!selectedScene) return
-    await obsService.removeSceneItem(selectedScene, item.sceneItemId)
-    await loadSceneItems(selectedScene)
+    setItemActionError(null)
+
+    try {
+      await obsService.removeSceneItem(selectedScene, item.sceneItemId)
+      await loadSceneItems(selectedScene)
+    } catch (err) {
+      setItemActionError(
+        (err as Error).message || 'Unable to remove this source right now.',
+      )
+    }
+  }
+
+  const handleToggleItemVisibility = async (item: OBSSceneItem) => {
+    if (!selectedScene) return
+    setItemActionError(null)
+
+    try {
+      await obsService.setSceneItemEnabled(
+        selectedScene,
+        item.sceneItemId,
+        !item.sceneItemEnabled,
+      )
+      await loadSceneItems(selectedScene)
+    } catch (err) {
+      setItemActionError(
+        (err as Error).message ||
+          'Unable to change visibility for this source.',
+      )
+    }
+  }
+
+  const handleMoveItem = async (
+    item: OBSSceneItem,
+    direction: 'up' | 'down',
+  ) => {
+    if (!selectedScene) return
+
+    const currentListIndex = sceneItems.findIndex(
+      (sceneItem) => sceneItem.sceneItemId === item.sceneItemId,
+    )
+
+    if (currentListIndex < 0) return
+
+    const targetListIndex =
+      direction === 'up' ? currentListIndex - 1 : currentListIndex + 1
+
+    if (targetListIndex < 0 || targetListIndex >= sceneItems.length) return
+
+    const targetItem = sceneItems[targetListIndex]
+    setItemActionError(null)
+
+    try {
+      await obsService.setSceneItemIndex(
+        selectedScene,
+        item.sceneItemId,
+        targetItem.sceneItemIndex,
+      )
+      await loadSceneItems(selectedScene)
+    } catch (err) {
+      setItemActionError(
+        (err as Error).message || 'Unable to reorder this source right now.',
+      )
+    }
+  }
+
+  const handleStartRenameItem = (item: OBSSceneItem) => {
+    setItemActionError(null)
+    setRenamingItemId(item.sceneItemId)
+    setRenameItemValue(item.sourceName)
+  }
+
+  const handleRenameItem = async (item: OBSSceneItem) => {
+    if (!selectedScene) return
+
+    const nextName = renameItemValue.trim()
+
+    if (!nextName || nextName === item.sourceName) {
+      setRenamingItemId(null)
+      return
+    }
+
+    setItemActionError(null)
+
+    try {
+      await obsService.renameSource(item.sourceName, nextName)
+      await obsService.refreshScenes()
+
+      const nextSelectedScene =
+        selectedScene === item.sourceName ? nextName : selectedScene
+
+      if (nextSelectedScene !== selectedScene) {
+        setSelectedScene(nextSelectedScene)
+      }
+
+      await loadSceneItems(nextSelectedScene)
+      setRenamingItemId(null)
+      setRenameItemValue('')
+    } catch (err) {
+      setItemActionError(
+        (err as Error).message || 'Unable to rename this source right now.',
+      )
+    }
   }
 
   // ── Disconnected ────────────────────────────────────────────────────────────
@@ -993,55 +1103,155 @@ export function OBSPanel() {
             </button>
             <span className="panel-title text-sm">{selectedScene}</span>
           </div>
-          <button
-            className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 bg-transparent border-none cursor-pointer"
-            onClick={() => setView('addSource')}
-          >
-            <Globe size={12} /> Add Browser Source
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="icon-btn text-neutral-500 hover:text-sky-400"
+              onClick={() =>
+                selectedScene ? void loadSceneItems(selectedScene) : undefined
+              }
+              title="Refresh sources"
+            >
+              <RefreshCw size={12} />
+            </button>
+            <button
+              className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 bg-transparent border-none cursor-pointer"
+              onClick={() => setView('addSource')}
+            >
+              <Globe size={12} /> Add Browser Source
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
+          {itemActionError && (
+            <p className="text-[11px] text-red-400 mb-3">{itemActionError}</p>
+          )}
+
           {loadingItems ? (
             <div className="flex items-center justify-center py-8">
               <RefreshCw size={16} className="animate-spin text-neutral-500" />
             </div>
           ) : (
             <div className="space-y-1">
-              {sceneItems.map((item) => (
+              {sceneItems.map((item, index) => (
                 <div key={item.sceneItemId} className="source-row">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    {item.inputKind === 'browser_source' ? (
-                      <Globe size={13} className="text-sky-400 shrink-0" />
-                    ) : (
-                      <Video size={13} className="text-neutral-500 shrink-0" />
-                    )}
-                    <span className="text-xs text-neutral-300 truncate">
-                      {item.sourceName}
-                    </span>
-                    <span className="text-xs text-neutral-600 shrink-0">
-                      {item.inputKind}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {item.inputKind === 'browser_source' && (
-                      <button
-                        className="icon-btn text-neutral-500 hover:text-sky-400"
-                        onClick={() => {
-                          setEditingItem(item)
-                          setView('editSource')
+                  {renamingItemId === item.sceneItemId ? (
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <input
+                        className="connect-input flex-1 py-0.5 text-xs"
+                        value={renameItemValue}
+                        onChange={(e) => setRenameItemValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            void handleRenameItem(item)
+                          }
+                          if (e.key === 'Escape') {
+                            setRenamingItemId(null)
+                          }
                         }}
+                        autoFocus
+                      />
+                      <button
+                        className="icon-btn text-green-400"
+                        onClick={() => void handleRenameItem(item)}
+                        title="Save name"
                       >
-                        <Edit3 size={12} />
+                        <Check size={12} />
                       </button>
-                    )}
-                    <button
-                      className="icon-btn text-neutral-500 hover:text-red-400"
-                      onClick={() => handleRemoveItem(item)}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                      <button
+                        className="icon-btn text-neutral-500"
+                        onClick={() => setRenamingItemId(null)}
+                        title="Cancel rename"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {item.inputKind === 'browser_source' ? (
+                          <Globe size={13} className="text-sky-400 shrink-0" />
+                        ) : (
+                          <Video size={13} className="text-neutral-500 shrink-0" />
+                        )}
+                        <span
+                          className={`text-xs truncate ${
+                            item.sceneItemEnabled
+                              ? 'text-neutral-300'
+                              : 'text-neutral-500 line-through'
+                          }`}
+                        >
+                          {item.sourceName}
+                        </span>
+                        <span className="text-xs text-neutral-600 shrink-0">
+                          {item.inputKind || 'source'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          className="icon-btn text-neutral-500 hover:text-white disabled:opacity-30"
+                          onClick={() => void handleMoveItem(item, 'up')}
+                          disabled={index === 0}
+                          title="Move up"
+                        >
+                          <ChevronUp size={12} />
+                        </button>
+                        <button
+                          className="icon-btn text-neutral-500 hover:text-white disabled:opacity-30"
+                          onClick={() => void handleMoveItem(item, 'down')}
+                          disabled={index === sceneItems.length - 1}
+                          title="Move down"
+                        >
+                          <ChevronDown size={12} />
+                        </button>
+                        <button
+                          className={`icon-btn ${
+                            item.sceneItemEnabled
+                              ? 'text-neutral-500 hover:text-amber-300'
+                              : 'text-amber-400 hover:text-amber-300'
+                          }`}
+                          onClick={() => void handleToggleItemVisibility(item)}
+                          title={
+                            item.sceneItemEnabled
+                              ? 'Hide source'
+                              : 'Show source'
+                          }
+                        >
+                          {item.sceneItemEnabled ? (
+                            <Eye size={12} />
+                          ) : (
+                            <EyeOff size={12} />
+                          )}
+                        </button>
+                        {item.inputKind === 'browser_source' && (
+                          <button
+                            className="icon-btn text-neutral-500 hover:text-sky-400"
+                            onClick={() => {
+                              setEditingItem(item)
+                              setView('editSource')
+                            }}
+                            title="Edit browser source"
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                        )}
+                        <button
+                          className="icon-btn text-neutral-500 hover:text-amber-400"
+                          onClick={() => handleStartRenameItem(item)}
+                          title="Rename source"
+                        >
+                          <Edit3 size={12} />
+                        </button>
+                        <button
+                          className="icon-btn text-neutral-500 hover:text-red-400"
+                          onClick={() => void handleRemoveItem(item)}
+                          title="Remove source"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
               {sceneItems.length === 0 && (
