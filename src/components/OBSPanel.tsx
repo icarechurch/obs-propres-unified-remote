@@ -34,6 +34,65 @@ import {
 
 const LOCAL_STUDIO_MODE_STORAGE_KEY = 'obs.localStudioMode.enabled'
 
+const FALLBACK_OBS_INPUT_KINDS = [
+  'browser_source',
+  'image_source',
+  'ffmpeg_source',
+  'slideshow',
+  'vlc_source',
+  'color_source_v3',
+  'text_gdiplus_v2',
+  'text_ft2_source_v2',
+  'monitor_capture',
+  'window_capture',
+  'game_capture',
+  'dshow_input',
+  'v4l2_input',
+  'wasapi_input_capture',
+  'wasapi_output_capture',
+]
+
+const OBS_INPUT_KIND_LABELS: Record<string, string> = {
+  browser_source: 'Browser Source',
+  image_source: 'Image',
+  ffmpeg_source: 'Media Source',
+  slideshow: 'Image Slide Show',
+  vlc_source: 'VLC Video Source',
+  color_source_v3: 'Color Source',
+  text_gdiplus_v2: 'Text (GDI+)',
+  text_ft2_source_v2: 'Text (FreeType 2)',
+  monitor_capture: 'Display Capture',
+  window_capture: 'Window Capture',
+  game_capture: 'Game Capture',
+  dshow_input: 'Video Capture Device',
+  v4l2_input: 'Video Capture Device',
+  av_capture_input: 'Video Capture Device',
+  av_capture_input_v2: 'Video Capture Device',
+  wasapi_input_capture: 'Audio Input Capture',
+  wasapi_output_capture: 'Audio Output Capture',
+}
+
+function formatInputKindLabel(inputKind: string): string {
+  const key = inputKind.trim()
+  if (!key) return 'Source'
+
+  const friendlyLabel = OBS_INPUT_KIND_LABELS[key]
+  if (friendlyLabel) return friendlyLabel
+
+  const normalized = key.replace(/_v\d+$/i, '')
+
+  return normalized
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+function formatInputKindOptionLabel(inputKind: string): string {
+  const friendly = formatInputKindLabel(inputKind)
+  return `${friendly} (${inputKind})`
+}
+
 export function OBSPanel() {
   const [status, setStatus] = useState(obsService.status)
   const [protocol, setProtocol] = useState<'ws' | 'wss'>('ws')
@@ -82,8 +141,15 @@ export function OBSPanel() {
   const [renameItemValue, setRenameItemValue] = useState('')
   const [itemActionError, setItemActionError] = useState<string | null>(null)
 
-  // Browser source
+  // Source creation
   const [bsName, setBsName] = useState('')
+  const [selectedInputKind, setSelectedInputKind] =
+    useState('browser_source')
+  const [availableInputKinds, setAvailableInputKinds] = useState<string[]>(
+    FALLBACK_OBS_INPUT_KINDS,
+  )
+  const [loadingInputKinds, setLoadingInputKinds] = useState(false)
+  const [addSourceError, setAddSourceError] = useState<string | null>(null)
   const [bsUrl, setBsUrl] = useState('')
   const [bsWidth, setBsWidth] = useState(1920)
   const [bsHeight, setBsHeight] = useState(1080)
@@ -117,6 +183,40 @@ export function OBSPanel() {
       localStudioMode ? '1' : '0',
     )
   }, [localStudioMode, localStudioModeReady])
+
+  useEffect(() => {
+    if (view !== 'addSource' || !status.connected) return
+
+    let active = true
+    setLoadingInputKinds(true)
+
+    void obsService
+      .getInputKinds()
+      .then((inputKinds) => {
+        if (!active) return
+
+        const nextKinds =
+          inputKinds.length > 0
+            ? inputKinds
+            : FALLBACK_OBS_INPUT_KINDS
+
+        setAvailableInputKinds(nextKinds)
+        setSelectedInputKind((current) => {
+          if (nextKinds.includes(current)) return current
+          if (nextKinds.includes('browser_source')) return 'browser_source'
+          return nextKinds[0] ?? 'browser_source'
+        })
+      })
+      .finally(() => {
+        if (active) {
+          setLoadingInputKinds(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [view, status.connected])
 
   const refreshLivePreview = useCallback(
     async (showLoading = false) => {
@@ -360,6 +460,7 @@ export function OBSPanel() {
 
   const handleSelectScene = async (sceneName: string) => {
     setItemActionError(null)
+    setAddSourceError(null)
     setRenamingItemId(null)
     setRenameItemValue('')
     setSelectedScene(sceneName)
@@ -398,19 +499,47 @@ export function OBSPanel() {
     setRenamingScene(null)
   }
 
-  const handleAddBrowserSource = async () => {
-    if (!selectedScene || !bsName.trim() || !bsUrl.trim()) return
-    await obsService.createBrowserSource(
-      selectedScene,
-      bsName.trim(),
-      bsUrl.trim(),
-      bsWidth,
-      bsHeight,
-    )
-    await loadSceneItems(selectedScene)
-    setBsName('')
-    setBsUrl('')
-    setView('scenes')
+  const handleAddSource = async () => {
+    if (!selectedScene || !bsName.trim() || !selectedInputKind.trim()) return
+
+    if (!availableInputKinds.includes(selectedInputKind)) {
+      setAddSourceError(
+        'This source type is not available in your current OBS session.',
+      )
+      return
+    }
+
+    const inputSettings: Record<string, unknown> = {}
+
+    if (selectedInputKind === 'browser_source') {
+      if (!bsUrl.trim()) {
+        setAddSourceError('A URL is required for Browser Source.')
+        return
+      }
+
+      inputSettings.url = bsUrl.trim()
+      inputSettings.width = Math.max(Math.floor(bsWidth), 1)
+      inputSettings.height = Math.max(Math.floor(bsHeight), 1)
+    }
+
+    setAddSourceError(null)
+
+    try {
+      await obsService.createInputSource(
+        selectedScene,
+        bsName.trim(),
+        selectedInputKind,
+        inputSettings,
+      )
+      await loadSceneItems(selectedScene)
+      setBsName('')
+      setBsUrl('')
+      setView('scenes')
+    } catch (err) {
+      setAddSourceError(
+        (err as Error).message || 'Unable to create this source right now.',
+      )
+    }
   }
 
   const handleUpdateBrowserSource = async () => {
@@ -1115,9 +1244,12 @@ export function OBSPanel() {
             </button>
             <button
               className="flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 bg-transparent border-none cursor-pointer"
-              onClick={() => setView('addSource')}
+              onClick={() => {
+                setAddSourceError(null)
+                setView('addSource')
+              }}
             >
-              <Globe size={12} /> Add Browser Source
+              <Plus size={12} /> Add Source
             </button>
           </div>
         </div>
@@ -1266,7 +1398,7 @@ export function OBSPanel() {
     )
   }
 
-  // ── Add Browser Source ────────────────────────────────────────────────────────
+  // ── Add Source ───────────────────────────────────────────────────────────────
   if (view === 'addSource') {
     return (
       <div className="obs-panel h-full flex flex-col">
@@ -1279,54 +1411,91 @@ export function OBSPanel() {
               <X size={14} />
             </button>
             <Globe size={14} className="text-sky-400" />
-            <span className="panel-title text-sm">Add Browser Source</span>
+            <span className="panel-title text-sm">Add Source</span>
           </div>
         </div>
         <div className="flex-1 p-4 space-y-3">
+          <div className="connect-form-group">
+            <label className="connect-label">Source Type</label>
+            <select
+              className="connect-input"
+              value={selectedInputKind}
+              onChange={(e) => setSelectedInputKind(e.target.value)}
+              disabled={loadingInputKinds}
+            >
+              {availableInputKinds.map((inputKind) => (
+                <option key={inputKind} value={inputKind}>
+                  {formatInputKindOptionLabel(inputKind)}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-neutral-600 mt-1 font-mono">
+              {selectedInputKind}
+            </p>
+          </div>
+
           <div className="connect-form-group">
             <label className="connect-label">Source Name</label>
             <input
               className="connect-input"
               value={bsName}
               onChange={(e) => setBsName(e.target.value)}
-              placeholder="My Browser Source"
+              placeholder="My Source"
             />
           </div>
-          <div className="connect-form-group">
-            <label className="connect-label">URL</label>
-            <input
-              className="connect-input"
-              value={bsUrl}
-              onChange={(e) => setBsUrl(e.target.value)}
-              placeholder="https://…"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="connect-form-group">
-              <label className="connect-label">Width</label>
-              <input
-                className="connect-input"
-                type="number"
-                value={bsWidth}
-                onChange={(e) => setBsWidth(Number(e.target.value))}
-              />
-            </div>
-            <div className="connect-form-group">
-              <label className="connect-label">Height</label>
-              <input
-                className="connect-input"
-                type="number"
-                value={bsHeight}
-                onChange={(e) => setBsHeight(Number(e.target.value))}
-              />
-            </div>
-          </div>
+
+          {selectedInputKind === 'browser_source' && (
+            <>
+              <div className="connect-form-group">
+                <label className="connect-label">URL</label>
+                <input
+                  className="connect-input"
+                  value={bsUrl}
+                  onChange={(e) => setBsUrl(e.target.value)}
+                  placeholder="https://…"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="connect-form-group">
+                  <label className="connect-label">Width</label>
+                  <input
+                    className="connect-input"
+                    type="number"
+                    value={bsWidth}
+                    onChange={(e) => setBsWidth(Number(e.target.value))}
+                  />
+                </div>
+                <div className="connect-form-group">
+                  <label className="connect-label">Height</label>
+                  <input
+                    className="connect-input"
+                    type="number"
+                    value={bsHeight}
+                    onChange={(e) => setBsHeight(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {addSourceError && (
+            <p className="text-[11px] text-red-400">{addSourceError}</p>
+          )}
+
           <button
             className="connect-btn w-full mt-2"
-            onClick={handleAddBrowserSource}
+            onClick={handleAddSource}
+            disabled={loadingInputKinds}
           >
             <Plus size={14} /> Add Source
           </button>
+
+          {loadingInputKinds && (
+            <p className="text-[11px] text-neutral-500 text-center">
+              Loading available OBS source types…
+            </p>
+          )}
         </div>
       </div>
     )

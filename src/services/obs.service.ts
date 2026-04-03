@@ -445,6 +445,41 @@ class OBSService {
     return result.inputs
   }
 
+  async getInputKinds(): Promise<string[]> {
+    if (!this._connected) return []
+
+    try {
+      const result = (await this.obs.call('GetInputKindList')) as {
+        inputKinds?: unknown
+      }
+
+      if (!Array.isArray(result.inputKinds)) return []
+
+      return result.inputKinds
+        .filter((kind): kind is string => typeof kind === 'string')
+        .map((kind) => kind.trim())
+        .filter((kind) => kind.length > 0)
+        .sort((a, b) => a.localeCompare(b))
+    } catch {
+      return []
+    }
+  }
+
+  async createInputSource(
+    sceneName: string,
+    sourceName: string,
+    inputKind: string,
+    inputSettings: Record<string, unknown> = {},
+  ) {
+    if (!this._connected) return
+    await this.obs.call('CreateInput', {
+      sceneName,
+      inputName: sourceName,
+      inputKind,
+      inputSettings,
+    })
+  }
+
   async createBrowserSource(
     sceneName: string,
     sourceName: string,
@@ -452,12 +487,10 @@ class OBSService {
     width = 1920,
     height = 1080,
   ) {
-    if (!this._connected) return
-    await this.obs.call('CreateInput', {
-      sceneName,
-      inputName: sourceName,
-      inputKind: 'browser_source',
-      inputSettings: { url, width, height },
+    await this.createInputSource(sceneName, sourceName, 'browser_source', {
+      url,
+      width,
+      height,
     })
   }
 
